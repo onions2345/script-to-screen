@@ -86,17 +86,19 @@
   @keyframes s{to{transform:rotate(360deg)}}
   .hidden{display:none}
   footer{margin-top:40px;color:var(--muted);font-size:12px;text-align:center}
-  .hits{font-family:var(--mono);color:var(--shoot);font-size:13px;margin-bottom:8px;min-height:1em}
+  .topbar{display:flex;justify-content:flex-end;margin:-6px 0 -2px}
+  .hits{font-family:var(--mono);color:var(--muted);font-size:11px;opacity:.65;letter-spacing:.04em}
   a{color:var(--shoot)}
   @media (prefers-reduced-motion: reduce){.spin{animation:none}}
 </style>
 </head>
 <body>
 <div class="wrap">
+  <div class="topbar"><span id="hits" class="hits"></span></div>
   <header class="top">
     <p class="eyebrow">A table read, generated</p>
     <h1>Script <span class="b">to</span> Screen</h1>
-    <p class="lede">Paste a script. Gemini works out who speaks each line and casts a voice, reads it aloud, and sketches the visual beats — then stitches the voices into one audio track. Runs entirely in your browser.</p>
+    <p class="lede">Paste a script. Gemini works out who speaks each line and casts a voice, reads it aloud, and sketches the visual beats — then stitches the voices into one audio track and makes your video. Runs entirely in your browser.</p>
   </header>
 
   <!-- SETTINGS -->
@@ -163,10 +165,7 @@
     <div id="beats"></div>
   </div>
 
-  <footer>
-    <div id="hits" class="hits"></div>
-    Built to run on GitHub Pages. Powered by your own Gemini key — nothing is sent anywhere except Google's API.
-  </footer>
+  <footer>Built to run on GitHub Pages. Powered by your own Gemini key — nothing is sent anywhere except Google's API.</footer>
 </div>
 
 <script>
@@ -202,11 +201,14 @@ if(!$("script").value) $("script").value = SAMPLE;
 (async function countOpen(){
   const el=$("hits"); if(!el) return;
   const ns="onions2345-script-to-screen", key="opens";
-  const read = async url => { const r=await fetch(url); if(!r.ok) throw 0; const d=await r.json(); const n=d.value ?? d.count; if(n==null) throw 0; return n; };
+  const read = async url => { const r=await fetch(url,{cache:"no-store"}); if(!r.ok) throw 0; const d=await r.json(); const n=d.value ?? d.count; if(n==null) throw 0; return n; };
   let n=null;
-  try{ n = await read(`https://abacus.jasoncameron.dev/hit/${ns}/${key}`); }
-  catch(e){ try{ n = await read(`https://countapi.mileshilliard.com/api/v1/hit/${ns}_${key}`); }catch(e2){} }
-  if(n!=null) el.textContent = "👁  Opened "+Number(n).toLocaleString()+" times";
+  try{ n = await read(`https://countapi.mileshilliard.com/api/v1/hit/${ns}_${key}`); }
+  catch(e){ try{ n = await read(`https://abacus.jasoncameron.dev/hit/${ns}/${key}`); }catch(e2){} }
+  if(n==null){ // services blocked/unreachable — still show a count for this device
+    n=(parseInt(localStorage.getItem("s2s_opens")||"0",10)||0)+1; localStorage.setItem("s2s_opens",n);
+  }
+  el.textContent = "page views: "+Number(n).toLocaleString();
 })();
 
 // ---------- helpers ----------
