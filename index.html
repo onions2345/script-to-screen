@@ -1084,20 +1084,24 @@ $("videoBtn").onclick = async ()=>{
   const canvas=$("vcanvas"); canvas.width=W; canvas.height=H; canvas.classList.remove("hidden");
   const cx=canvas.getContext("2d");
   const imgs={};
-  const loadImg=src=>new Promise(res=>{ if(!src) return res(null); if(imgs[src]) return res(imgs[src]); const im=new Image(); im.onload=()=>{imgs[src]=im;res(im)}; im.onerror=()=>res(null); im.src=src; });
+  const loadImg=src=>new Promise(res=>{ if(!src) return res(null); if(imgs[src]) return res(imgs[src]); const im=new Image(); let fin=false; const done=v=>{ if(fin) return; fin=true; res(v); }; im.onload=()=>{ imgs[src]=im; done(im); }; im.onerror=()=>done(null); setTimeout(()=>done(null),8000); im.src=src; });  // never hang on a bad/slow image
 
   const actx=new (window.AudioContext||window.webkitAudioContext)();
   const gain=actx.createGain(); gain.connect(actx.destination);              // hear it while it records
   const dest=actx.createMediaStreamDestination(); gain.connect(dest);        // and feed it into the video
 
+  let rec=null, running=true;          // declared out here so the catch/finally below can reach them
+  try{
+  const rate = (pcmRate && isFinite(pcmRate) && pcmRate>0) ? pcmRate : 24000;   // guard a missing/bad sample rate
   // Timeline: title card, a held frame for each visual beat, the audio for each spoken beat.
   let cur=null; const segs=[{img:null,title:(project.title||""),audio:null,dur:2.0}];
   for(const b of project.beats){
     if(b.type==="visual"){ if(b._img) cur=b._img; segs.push({img:cur,audio:null,dur:HOLD}); }
-    else if(b._pcm){
-      const s16=new Int16Array(b._pcm.buffer,b._pcm.byteOffset,Math.floor(b._pcm.length/2));
-      const buf=actx.createBuffer(1,s16.length,pcmRate); const ch=buf.getChannelData(0);
-      for(let i=0;i<s16.length;i++) ch[i]=s16[i]/32768;
+    else if(b._pcm && b._pcm.length>=2){
+      const n=b._pcm.length>>1;                                  // # of Int16 samples
+      const dv=new DataView(b._pcm.buffer, b._pcm.byteOffset, n*2);   // DataView -> no byte-alignment requirement
+      const buf=actx.createBuffer(1, n, rate); const ch=buf.getChannelData(0);
+      for(let i=0;i<n;i++) ch[i]=dv.getInt16(i*2,true)/32768;
       segs.push({img:cur,audio:buf,dur:buf.duration});
     }
   }
@@ -1116,7 +1120,7 @@ $("videoBtn").onclick = async ()=>{
 
   function drawSeg(s, now, alpha){
     cx.globalAlpha = alpha;
-    if(s.img && imgs[s.img]){
+    if(s.img && imgs[s.img] && imgs[s.img].width>0 && imgs[s.img].height>0){
       const im=imgs[s.img];
       const p = Math.max(0, Math.min(1,(now - s.start)/Math.max(0.001,s.dur)));
       const base = s.kb ? Math.max(W/im.width,H/im.height) : Math.min(W/im.width,H/im.height); // cover for KB, contain otherwise
@@ -1124,7 +1128,7 @@ $("videoBtn").onclick = async ()=>{
       const w=im.width*base*z, h=im.height*base*z;
       let ox=0, oy=0;
       if(s.kb){ const mx=Math.max(0,(w-W)/2), my=Math.max(0,(h-H)/2); ox=s.kb.px*mx*(p-0.5)*0.6; oy=s.kb.py*my*(p-0.5)*0.6; }
-      cx.drawImage(im,(W-w)/2+ox,(H-h)/2+oy,w,h);
+      if(isFinite(w)&&isFinite(h)&&w>0&&h>0) cx.drawImage(im,(W-w)/2+ox,(H-h)/2+oy,w,h);
     }
     if(s.title){ cx.fillStyle="#e7e9f2"; cx.textAlign="center"; cx.font="600 54px system-ui,-apple-system,sans-serif"; cx.fillText(s.title,W/2,H/2); }
     cx.globalAlpha = 1;
@@ -1143,24 +1147,29 @@ $("videoBtn").onclick = async ()=>{
   let mime="video/webm;codecs=vp9,opus";
   if(!MediaRecorder.isTypeSupported(mime)) mime="video/webm;codecs=vp8,opus";
   if(!MediaRecorder.isTypeSupported(mime)) mime="video/webm";
-  let rec; try{ rec=new MediaRecorder(stream,{mimeType:mime}); }
-  catch(e){ st.textContent="This browser can't record video here — try Chrome (Android or desktop)."; canvas.classList.add("hidden"); btn.disabled=false; return; }
+  try{ rec=new MediaRecorder(stream,{mimeType:mime}); }
+  catch(e){ st.textContent="This browser can't record video here — try Chrome (Android or desktop)."; return; }
   const chunks=[]; rec.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); };
   const done=new Promise(r=>rec.onstop=r);
 
-  let running=true;
   await actx.resume();
   rec.start();
   const t0=actx.currentTime+0.2;
   (function loop(){ drawAt(Math.max(0, actx.currentTime - t0)); if(running) requestAnimationFrame(loop); })();
   segs.forEach(s=>{ if(s.audio){ const src=actx.createBufferSource(); src.buffer=s.audio; src.connect(gain); src.start(t0+s.start); } });
-  st.innerHTML='<span class="spin"></span>Recording in real time — '+Math.ceil(total)+'s. Keep this tab open…';
-  setTimeout(()=>{ running=false; rec.stop(); }, total*1000+500);
+  const recMs = Math.min(20*60*1000, Math.max(1500, (isFinite(total)?total:1)*1000+500));   // always finite, so recording always stops
+  st.innerHTML='<span class="spin"></span>Recording in real time — '+Math.ceil(recMs/1000)+'s. Keep this tab open…';
+  setTimeout(()=>{ running=false; try{rec.stop();}catch(_){ } }, recMs);
   await done;
   const v=document.createElement("a"); v.href=URL.createObjectURL(new Blob(chunks,{type:mime})); v.download=(project.title||"film")+".webm"; v.click();
-  canvas.classList.add("hidden"); try{actx.close()}catch(e){}
   st.textContent="Video exported (.webm). Plays in Chrome, VLC, and most players; if a site rejects WebM, re-wrap to MP4 in a free editor like CapCut.";
-  btn.disabled=false;
+  }catch(err){
+    running=false; try{ if(rec && rec.state && rec.state!=="inactive") rec.stop(); }catch(_){}
+    st.textContent="Video render failed: "+((err&&err.message)||err)+". If you regenerated audio or images, try generating those again; or set Motion to None in Settings ⚙ and retry.";
+  }finally{
+    canvas.classList.add("hidden"); try{actx.close()}catch(_){}
+    btn.disabled=false;
+  }
 };
 
 // ---------- STEP 3b: visuals ----------
