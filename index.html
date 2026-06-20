@@ -171,6 +171,7 @@
       <option value="puter-polly">Puter · Amazon Polly neural — free, no key</option>
       <option value="puter-xai">Puter · Grok (xAI), expressive — free, no key</option>
       <option value="puter-eleven">Puter · ElevenLabs (one voice) — free, no key</option>
+      <option value="custom">Custom / OpenAI-compatible endpoint — your server, Pollinations, etc.</option>
     </select>
     <div id="ttsModelField">
       <label for="mTts">Google API Voice model (TTS)</label>
@@ -180,6 +181,17 @@
         <option value="gemini-2.5-flash-lite-preview-tts">gemini-2.5-flash-lite-preview-tts — extra quota</option>
         <option value="gemini-3.1-flash-tts-preview">gemini-3.1-flash-tts-preview — newest</option>
       </select>
+    </div>
+    <div id="customField" class="hidden">
+      <label for="custUrl">Endpoint URL (OpenAI-compatible /v1/audio/speech)</label>
+      <input id="custUrl" type="text" placeholder="https://gen.pollinations.ai/v1/audio/speech" autocomplete="off" />
+      <div class="row">
+        <div><label for="custModel">Model</label><input id="custModel" type="text" value="tts-1" autocomplete="off" /></div>
+        <div><label for="custVoice">Voice</label><input id="custVoice" type="text" value="nova" autocomplete="off" /></div>
+      </div>
+      <label for="custKey">API key (optional — sent as a Bearer token)</label>
+      <input id="custKey" type="password" placeholder="leave blank if your endpoint needs no key" autocomplete="off" />
+      <div class="hint">Point this at any OpenAI-compatible TTS server. Examples: <strong>Pollinations</strong> — URL <code>https://gen.pollinations.ai/v1/audio/speech</code>, get a free key at enter.pollinations.ai; a <strong>self-hosted Edge-TTS</strong> (travisvn/openai-edge-tts) at your own URL; or OpenAI's own <code>https://api.openai.com/v1/audio/speech</code> with your key (note: OpenAI may block direct browser calls). One voice for all characters.</div>
     </div>
     <div class="hint"><strong>Google Cloud TTS</strong> uses the same Google key as Gemini but is a separate service with its own (large, free-tier) quota — the best way around the Gemini 100/day TTS cap. One-time setup on your own Google account: <a href="https://console.cloud.google.com/apis/library/texttospeech.googleapis.com" target="_blank" rel="noopener">enable the Cloud Text-to-Speech API</a> on the same project as your key (free to enable; ~1M characters/month free, billing must be on the project). It auto-assigns a Neural2 voice per character.<br><br>All the <strong>Puter</strong> options are free and need no key (a quick Puter sign-in may pop up on first use) and don't touch your Gemini quota. "Puter · Gemini" keeps your exact cast voices; the others use their own voices, auto-assigned per character (ElevenLabs uses one voice for all). The Google API Voice model dropdown only shows for the Gemini-voice options.</div>
 
@@ -277,7 +289,7 @@ REES: You notice more when you write it down.
 ON SCREEN: Note. This contradicts the budget you approved on Tuesday.`;
 
 // ---------- config persistence (local only) ----------
-const cfgKeys = ["key","mText","mTts","mImg","ttsProvider"];
+const cfgKeys = ["key","mText","mTts","mImg","ttsProvider","custUrl","custModel","custVoice","custKey"];
 cfgKeys.forEach(k=>{
   const el=$(k), v=localStorage.getItem("s2s_"+k);
   if(v===null) return;
@@ -290,10 +302,11 @@ cfgKeys.forEach(k=> ["input","change"].forEach(ev=> $(k).addEventListener(ev,()=
 $("gearBtn").onclick = ()=> $("settingsCard").classList.toggle("hidden");
 function openSettings(){ $("settingsCard").classList.remove("hidden"); $("settingsCard").scrollIntoView({behavior:"smooth",block:"start"}); }
 
-// the Gemini TTS model dropdown only applies to the Gemini-voice providers
+// show the right per-provider fields
 function syncTtsModelVis(){
   const p=$("ttsProvider").value;
   $("ttsModelField").classList.toggle("hidden", !(p==="gemini"||p==="puter-gemini"));
+  $("customField").classList.toggle("hidden", p!=="custom");
 }
 $("ttsProvider").addEventListener("change", syncTtsModelVis);
 syncTtsModelVis();
@@ -469,7 +482,9 @@ $("voicesBtn").onclick = async ()=>{
             ? await googleTTS(b.speaker, onscreen, (b.text||""))
             : provider==="streamelements"
               ? await streamTTS(b.speaker, onscreen, (b.text||""))
-              : await puterTTS(puterOpts(provider, b.speaker, onscreen, styleInstr), (b.text||""));
+              : provider==="custom"
+                ? await customTTS(b.text||"")
+                : await puterTTS(puterOpts(provider, b.speaker, onscreen, styleInstr), (b.text||""));
         b._pcm = audio.pcm; pcmRate = audio.rate;
         const slot = $(b._id).querySelector(".slot");
         slot.innerHTML=""; const a=document.createElement("audio"); a.controls=true;
@@ -488,7 +503,15 @@ $("voicesBtn").onclick = async ()=>{
     if(!ok) $(b._id).querySelector(".slot").innerHTML=`<div class="style">Voice failed: ${linkify(escapeHtml(lastErr))}<br><strong>Your finished audio won't be lost.</strong> Try again in a minute, or change the voice provider in <a href="#" onclick="openSettings();return false;">Settings ⚙</a> — then click Generate voices to do just the rest.</div>`;
   }
   const done = spoken.filter(b=>b._pcm).length;
-  if(fatalErr) st.innerHTML = `Couldn't generate with this provider — ${linkify(escapeHtml(fatalErr))}<br><strong>Nothing you've made is lost.</strong> This isn't a rate limit; it usually means the provider needs setup (e.g. enabling the Cloud Text-to-Speech API — tap the link in the message above) or can't be reached from the browser. Or pick a different voice provider in <a href="#" onclick="openSettings();return false;">Settings ⚙</a>, then click Generate voices again.`;
+  if(fatalErr){
+    const isCloud=/cloud text-to-speech|texttospeech/i.test(fatalErr);
+    const note = isCloud
+      ? `This enables it for the Google Cloud project tied to the key you entered on this device — a project number unique to you, and you only do it once. Note: Cloud Text-to-Speech is only free up to a monthly limit, so keep an eye on your usage.`
+      : `This isn't a rate limit — it usually means the provider needs setup, or can't be reached from the browser.`;
+    st.innerHTML = `<div>Couldn't generate with this provider:</div>`
+      + `<div style="white-space:pre-wrap;margin:6px 0;padding:10px;border:1px solid var(--line);border-radius:8px;font-family:var(--mono);font-size:12px">${linkify(escapeHtml(fatalErr))}</div>`
+      + `<div style="margin-top:14px">${note} <strong>Nothing you've made is lost.</strong> Tap the link above to enable it, or pick a different voice provider in <a href="#" onclick="openSettings();return false;">Settings ⚙</a>, then click Generate voices again.</div>`;
+  }
   else if(cancelGen) st.innerHTML = `Stopped — ${done} of ${spoken.length} voiced. <strong>Nothing's lost.</strong> Change the voice provider in <a href="#" onclick="openSettings();return false;">Settings ⚙</a>, then click Generate voices to continue the rest.`;
   else if(hitDaily) st.innerHTML = `Voiced ${done} of ${spoken.length}. Daily limit reached on this model. <strong>Your audio so far is safe.</strong> Try again in a minute, switch the voice model/provider in <a href="#" onclick="openSettings();return false;">Settings ⚙</a>, or come back after midnight Pacific — then Generate voices again.`;
   else st.innerHTML = done===spoken.length ? "Voices done — all "+done+" lines." : `Voiced ${done} of ${spoken.length}. <strong>What's done is saved.</strong> Try again in a minute, or change the voice provider in <a href="#" onclick="openSettings();return false;">Settings ⚙</a>, then click Generate voices to fill the rest.`;
@@ -564,7 +587,7 @@ async function googleTTS(speaker,isOnscreen,text){
     method:"POST", headers:{"Content-Type":"application/json"},
     body:JSON.stringify({ input:{text}, voice:{languageCode:"en-US", name}, audioConfig:{audioEncoding:"MP3"} })
   });
-  if(!res.ok) throw new Error("Cloud TTS "+res.status+": "+(await res.text()).slice(0,160));
+  if(!res.ok) throw new Error("Cloud TTS "+res.status+": "+(await res.text()).slice(0,1500));
   const data=await res.json();
   if(!data.audioContent) throw new Error("no audio — enable the Cloud Text-to-Speech API on your key's Google Cloud project");
   return decodeToPCM24(b64ToBytes(data.audioContent).buffer);
@@ -582,6 +605,19 @@ async function streamTTS(speaker,isOnscreen,text){
   const url="https://api.streamelements.com/kappa/v2/speech?voice="+encodeURIComponent(v)+"&text="+encodeURIComponent(text||"");
   const res=await fetch(url);
   if(!res.ok) throw new Error("StreamElements "+res.status+" (free endpoint may be busy — retry or switch provider)");
+  return decodeToPCM24(await res.arrayBuffer());
+}
+
+// Custom / OpenAI-compatible endpoint (self-hosted Edge-TTS, Pollinations, LocalAI, OpenAI, …)
+async function customTTS(text){
+  const url=($("custUrl").value||"").trim();
+  if(!url) throw new Error("Enter your TTS endpoint URL in Settings (Custom provider)");
+  const headers={"Content-Type":"application/json"};
+  const key=($("custKey").value||"").trim(); if(key) headers["Authorization"]="Bearer "+key;
+  const res=await fetch(url,{ method:"POST", headers, body:JSON.stringify({
+    model:($("custModel").value||"tts-1").trim(), input:text, voice:($("custVoice").value||"nova").trim(), response_format:"mp3"
+  })});
+  if(!res.ok) throw new Error("Custom TTS "+res.status+": "+(await res.text()).slice(0,800));
   return decodeToPCM24(await res.arrayBuffer());
 }
 
