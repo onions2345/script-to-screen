@@ -149,8 +149,10 @@
       <button id="downloadBtn" class="ghost" disabled>Download WAV (lossless)</button>
       <button id="downloadMp3Btn" class="ghost" disabled>Download MP3 (small)</button>
       <button id="exportBtn" class="ghost" disabled>Export storyboard (HTML)</button>
+      <button id="videoBtn" class="ghost" disabled>Render video (WebM)</button>
     </div>
     <div id="genStatus" class="status"></div>
+    <canvas id="vcanvas" class="hidden" style="width:100%;border-radius:10px;margin-top:14px;background:#0b0e16;aspect-ratio:16/9"></canvas>
   </div>
 
   <!-- STEP 3: OUTPUT -->
@@ -323,6 +325,7 @@ $("voicesBtn").onclick = async ()=>{
   st.textContent="Voices done.";
   $("downloadBtn").disabled=false;
   $("downloadMp3Btn").disabled=false;
+  $("videoBtn").disabled=false;
   btn.disabled=false;
 };
 
@@ -416,6 +419,73 @@ $("exportBtn").onclick = ()=>{
   const url=URL.createObjectURL(new Blob([doc],{type:"text/html"}));
   const a=document.createElement("a"); a.href=url; a.download=(project.title||"storyboard")+".html"; a.click();
   st.textContent="Storyboard exported — open the .html file in any browser.";
+};
+
+$("videoBtn").onclick = async ()=>{
+  if(!project) return;
+  if(!project.beats.some(b=>(b.type==="line"||b.type==="onscreen")&&b._pcm)){
+    $("genStatus").textContent="Generate voices first — the video needs audio."; return;
+  }
+  const st=$("genStatus"), btn=$("videoBtn");
+  btn.disabled=true; st.innerHTML='<span class="spin"></span>Preparing…';
+  const W=1280,H=720,FPS=30,HOLD=1.8;
+  const canvas=$("vcanvas"); canvas.width=W; canvas.height=H; canvas.classList.remove("hidden");
+  const cx=canvas.getContext("2d");
+  const imgs={};
+  const loadImg=src=>new Promise(res=>{ if(!src) return res(null); if(imgs[src]) return res(imgs[src]); const im=new Image(); im.onload=()=>{imgs[src]=im;res(im)}; im.onerror=()=>res(null); im.src=src; });
+
+  const actx=new (window.AudioContext||window.webkitAudioContext)();
+  const gain=actx.createGain(); gain.connect(actx.destination);              // hear it while it records
+  const dest=actx.createMediaStreamDestination(); gain.connect(dest);        // and feed it into the video
+
+  // Timeline: title card, a held frame for each visual beat, the audio for each spoken beat.
+  let cur=null; const segs=[{img:null,title:(project.title||""),audio:null,dur:2.0}];
+  for(const b of project.beats){
+    if(b.type==="visual"){ if(b._img) cur=b._img; segs.push({img:cur,audio:null,dur:HOLD}); }
+    else if(b._pcm){
+      const s16=new Int16Array(b._pcm.buffer,b._pcm.byteOffset,Math.floor(b._pcm.length/2));
+      const buf=actx.createBuffer(1,s16.length,pcmRate); const ch=buf.getChannelData(0);
+      for(let i=0;i<s16.length;i++) ch[i]=s16[i]/32768;
+      segs.push({img:cur,audio:buf,dur:buf.duration});
+    }
+  }
+  for(const s of segs) if(s.img) await loadImg(s.img);
+
+  function draw(s){
+    cx.fillStyle="#0b0e16"; cx.fillRect(0,0,W,H);
+    if(s.img&&imgs[s.img]){ const im=imgs[s.img]; const r=Math.min(W/im.width,H/im.height),w=im.width*r,h=im.height*r; cx.drawImage(im,(W-w)/2,(H-h)/2,w,h); }
+    if(s.title){ cx.fillStyle="#e7e9f2"; cx.textAlign="center"; cx.font="600 54px system-ui,-apple-system,sans-serif"; cx.fillText(s.title,W/2,H/2); }
+  }
+
+  const vstream=canvas.captureStream(FPS);
+  const stream=new MediaStream([...vstream.getVideoTracks(),...dest.stream.getAudioTracks()]);
+  let mime="video/webm;codecs=vp9,opus";
+  if(!MediaRecorder.isTypeSupported(mime)) mime="video/webm;codecs=vp8,opus";
+  if(!MediaRecorder.isTypeSupported(mime)) mime="video/webm";
+  let rec; try{ rec=new MediaRecorder(stream,{mimeType:mime}); }
+  catch(e){ st.textContent="This browser can't record video here — try Chrome (Android or desktop)."; canvas.classList.add("hidden"); btn.disabled=false; return; }
+  const chunks=[]; rec.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); };
+  const done=new Promise(r=>rec.onstop=r);
+
+  let current=segs[0], running=true;
+  (function loop(){ draw(current); if(running) requestAnimationFrame(loop); })();
+
+  await actx.resume();
+  rec.start();
+  const t0=actx.currentTime+0.2; let t=t0; const total=segs.reduce((n,s)=>n+s.dur,0);
+  segs.forEach(s=>{
+    const at=t;
+    setTimeout(()=>{ current=s; }, Math.max(0,(at-t0)*1000));
+    if(s.audio){ const src=actx.createBufferSource(); src.buffer=s.audio; src.connect(gain); src.start(at); }
+    t+=s.dur;
+  });
+  st.innerHTML='<span class="spin"></span>Recording in real time — '+Math.ceil(total)+'s. Keep this tab open…';
+  setTimeout(()=>{ running=false; rec.stop(); }, total*1000+500);
+  await done;
+  const v=document.createElement("a"); v.href=URL.createObjectURL(new Blob(chunks,{type:mime})); v.download=(project.title||"film")+".webm"; v.click();
+  canvas.classList.add("hidden"); try{actx.close()}catch(e){}
+  st.textContent="Video exported (.webm). Plays in Chrome, VLC, and most players; if a site rejects WebM, re-wrap to MP4 in a free editor like CapCut.";
+  btn.disabled=false;
 };
 
 // ---------- STEP 3b: visuals ----------
