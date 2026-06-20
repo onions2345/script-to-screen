@@ -1,8 +1,8 @@
 # 🎬 Script to Screen
 
-**Turn any script into a voiced, illustrated video and/or storyboard — free, in your browser, no signup.**
+**Turn any script into a voiced, illustrated video — free, in your browser, no signup.**
 
-Paste a screenplay or story. It works out who speaks each line, gives every character its own voice, reads it aloud, sketches the visuals, and hands you the finished audio as a single file.
+Paste a screenplay or story. It works out who speaks each line, gives every character its own voice, reads it aloud, sketches the visuals, and hands you the finished audio and images as a single video file.
 
 **▶ Live:** https://onions2345.github.io/script-to-screen/
 
