@@ -119,7 +119,7 @@
   @keyframes s{to{transform:rotate(360deg)}}
   .hidden{display:none}
   footer{margin-top:40px;color:var(--muted);font-size:12px;text-align:center}
-  .topbar{display:flex;justify-content:space-between;align-items:center;margin:-6px 0 2px}
+  .topbar{display:flex;justify-content:flex-end;align-items:center;margin:-6px 0 2px}
   .gear{background:transparent;border:1px solid var(--line);color:var(--text);width:46px;height:46px;border-radius:12px;font-size:24px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0;cursor:pointer}
   .gear:hover{border-color:var(--shoot);filter:brightness(1.1)}
   .stop{background:transparent;border:1px solid var(--red);color:var(--red)}
@@ -131,7 +131,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="topbar"><span id="hits" class="hits"></span><button id="gearBtn" class="gear" title="Settings — API key &amp; models" aria-label="Settings">⚙</button></div>
+  <div class="topbar"><button id="gearBtn" class="gear" title="Settings — API key &amp; models" aria-label="Settings">⚙</button></div>
   <header class="top">
     <h1>Script <span class="b">to</span> Screen</h1>
     <p class="eyebrow">Turn ANY Script / Screenplay into a movie FREE</p>
@@ -181,7 +181,7 @@
         <option value="gemini-3.1-flash-tts-preview">gemini-3.1-flash-tts-preview — newest</option>
       </select>
     </div>
-    <div class="hint"><strong>Google Cloud TTS</strong> uses the same Google key as Gemini but is a separate service with its own (large, free-tier) quota — the best way around the Gemini 100/day TTS cap. One-time setup: in Google Cloud Console, enable the "Cloud Text-to-Speech API" on the same project as your key. It auto-assigns a Neural2 voice per character.<br><br>All the <strong>Puter</strong> options are free and need no key (a quick Puter sign-in may pop up on first use) and don't touch your Gemini quota. "Puter · Gemini" keeps your exact cast voices; the others use their own voices, auto-assigned per character (ElevenLabs uses one voice for all). <strong>StreamElements</strong> is also free with no key and no sign-in (the classic "Brian" stream voices), though it's an unofficial endpoint that can be busy at times. The Google API Voice model dropdown only shows for the Gemini-voice options.</div>
+    <div class="hint"><strong>Google Cloud TTS</strong> uses the same Google key as Gemini but is a separate service with its own (large, free-tier) quota — the best way around the Gemini 100/day TTS cap. One-time setup on your own Google account: <a href="https://console.cloud.google.com/apis/library/texttospeech.googleapis.com" target="_blank" rel="noopener">enable the Cloud Text-to-Speech API</a> on the same project as your key (free to enable; ~1M characters/month free, billing must be on the project). It auto-assigns a Neural2 voice per character.<br><br>All the <strong>Puter</strong> options are free and need no key (a quick Puter sign-in may pop up on first use) and don't touch your Gemini quota. "Puter · Gemini" keeps your exact cast voices; the others use their own voices, auto-assigned per character (ElevenLabs uses one voice for all). The Google API Voice model dropdown only shows for the Gemini-voice options.</div>
 
     <h3>Script Analyzer</h3>
     <select id="mText">
@@ -252,7 +252,7 @@
     <div id="beats"></div>
   </div>
 
-  <footer>Built to run on GitHub Pages. Powered by your own Gemini key — nothing is sent anywhere except Google's API.</footer>
+  <footer>Built to run on GitHub Pages. Powered by your own Gemini key — nothing is sent anywhere except Google's API.<br><span id="hits" class="hits"></span></footer>
 </div>
 
 <script>
@@ -436,6 +436,7 @@ function renderBeats(){
   });
 }
 function escapeHtml(s){return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+function linkify(s){return (s||"").replace(/https?:\/\/[^\s"<]+/g, u=>`<a href="${u}" target="_blank" rel="noopener">${u}</a>`);}  // make URLs in errors clickable
 
 // ---------- STEP 3a: voices ----------
 let cancelGen=false;
@@ -484,10 +485,10 @@ $("voicesBtn").onclick = async ()=>{
       }
     }
     if(hitDaily || cancelGen || fatalErr) break;
-    if(!ok) $(b._id).querySelector(".slot").innerHTML=`<div class="style">Voice failed: ${escapeHtml(lastErr)}<br><strong>Your finished audio won't be lost.</strong> Try again in a minute, or change the voice provider in <a href="#" onclick="openSettings();return false;">Settings ⚙</a> — then click Generate voices to do just the rest.</div>`;
+    if(!ok) $(b._id).querySelector(".slot").innerHTML=`<div class="style">Voice failed: ${linkify(escapeHtml(lastErr))}<br><strong>Your finished audio won't be lost.</strong> Try again in a minute, or change the voice provider in <a href="#" onclick="openSettings();return false;">Settings ⚙</a> — then click Generate voices to do just the rest.</div>`;
   }
   const done = spoken.filter(b=>b._pcm).length;
-  if(fatalErr) st.innerHTML = `Couldn't generate with this provider — ${escapeHtml(fatalErr)}<br><strong>Nothing you've made is lost.</strong> This isn't a rate limit; it usually means the provider needs setup (e.g. enabling the Cloud Text-to-Speech API) or can't be reached from the browser. Pick a different voice provider in <a href="#" onclick="openSettings();return false;">Settings ⚙</a>, then click Generate voices again.`;
+  if(fatalErr) st.innerHTML = `Couldn't generate with this provider — ${linkify(escapeHtml(fatalErr))}<br><strong>Nothing you've made is lost.</strong> This isn't a rate limit; it usually means the provider needs setup (e.g. enabling the Cloud Text-to-Speech API — tap the link in the message above) or can't be reached from the browser. Or pick a different voice provider in <a href="#" onclick="openSettings();return false;">Settings ⚙</a>, then click Generate voices again.`;
   else if(cancelGen) st.innerHTML = `Stopped — ${done} of ${spoken.length} voiced. <strong>Nothing's lost.</strong> Change the voice provider in <a href="#" onclick="openSettings();return false;">Settings ⚙</a>, then click Generate voices to continue the rest.`;
   else if(hitDaily) st.innerHTML = `Voiced ${done} of ${spoken.length}. Daily limit reached on this model. <strong>Your audio so far is safe.</strong> Try again in a minute, switch the voice model/provider in <a href="#" onclick="openSettings();return false;">Settings ⚙</a>, or come back after midnight Pacific — then Generate voices again.`;
   else st.innerHTML = done===spoken.length ? "Voices done — all "+done+" lines." : `Voiced ${done} of ${spoken.length}. <strong>What's done is saved.</strong> Try again in a minute, or change the voice provider in <a href="#" onclick="openSettings();return false;">Settings ⚙</a>, then click Generate voices to fill the rest.`;
