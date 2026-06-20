@@ -559,11 +559,12 @@ async function genImageCustom(prompt){
   throw new Error("Image API returned no image data");
 }
 async function genImage(prompt){
+  const styled = ((project&&project.style)?project.style+". ":"") + (prompt||"");   // keep the whole film's look consistent
   const p=$("imgProvider").value;
-  return p==="pollinations" ? genImagePollinations(prompt)
-       : p==="puter"        ? genImagePuter(prompt)
-       : p==="custom-img"   ? genImageCustom(prompt)
-       :                      genImageGemini(prompt);
+  return p==="pollinations" ? genImagePollinations(styled)
+       : p==="puter"        ? genImagePuter(styled)
+       : p==="custom-img"   ? genImageCustom(styled)
+       :                      genImageGemini(styled);
 }
 
 function wavBytes(pcm, rate){
@@ -605,23 +606,31 @@ $("analyzeBtn").onclick = async ()=>{
   if(!script){ st.textContent="Paste a script first."; return; }
   btn.disabled=true; st.innerHTML='<span class="spin"></span>Reading the script…';
   const prompt =
-`You are a script supervisor. Read the SCRIPT below and return STRICT JSON only (no prose, no markdown fences).
+`You are a script supervisor and the film's art director. Read the SCRIPT below and return STRICT JSON only (no prose, no markdown fences).
 Schema:
 {
  "title": string,
+ "style": "<one consistent overall look for the WHOLE film, a few words: medium/film-stock, colour palette, lighting, era — assumed on every visual>",
  "voiceCast": { "<SPEAKER LABEL>": "<one voice from the allowed list>" , ... },
+ "visualBible": { "<PERSON OR RECURRING THING>": "<a fixed, concrete visual description — people: age, build, hair, skin tone, clothing, distinguishing features; objects/places: shape, colour, material, key details — phrased so it can be reused word-for-word every time that subject appears>", ... },
  "beats": [
    {"type":"line","speaker":"<label>","text":"<exact spoken words>","style":"<short delivery note>"},
    {"type":"onscreen","text":"<exact on-screen system text>","style":"flat robotic computer readout"},
-   {"type":"visual","prompt":"<vivid image-generation prompt for this moment>","caption":"<short on-screen label or empty>"}
+   {"type":"visual","prompt":"<vivid, concrete image prompt for this moment>","caption":"<short on-screen label or empty>"}
  ]
 }
 Rules:
 - Keep "line" and "onscreen" text VERBATIM from the script. Do not invent dialogue.
 - Treat system/UI text (e.g. lines marked ON SCREEN, or screen readouts) as type "onscreen".
-- Add type "visual" beats at scene openings, title cards, and strong imagery — about one every 3-5 lines. Write cinematic, concrete image prompts (no on-screen text in the image).
+- Add type "visual" beats at scene openings, title cards, and strong imagery — about one every 3-5 lines. No on-screen text or words inside the image.
 - Cast each speaker to a fitting voice. Allowed voices ONLY: ${VOICES.join(", ")}. Use one consistent voice per speaker.
 - Order beats exactly as they occur in the script.
+
+CONSISTENCY (important — this is how recurring people and things stay looking the same):
+- FIRST build "visualBible": list every RECURRING character (each named speaker, plus anyone who appears in more than one shot) and every RECURRING thing, motif, or location (a device, vehicle, building, key prop, a recurring graphic/screen, etc.). Give each ONE fixed appearance.
+- Decide ONE "style" for the whole film.
+- THEN, when writing each visual "prompt", for any character or recurring thing in that shot, copy its visualBible description into the prompt using the SAME identifying details every time (same age, hair, clothing, colours — you may shorten wording but never change those details). Each prompt must be SELF-CONTAINED: the image generator sees only that one prompt with no memory of the others, so fully re-describe the subject every time it appears.
+- If an important new person or thing first appears, add it to visualBible and use that exact description from then on.
 
 SCRIPT:
 ${script}`;
