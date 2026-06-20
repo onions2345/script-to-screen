@@ -380,6 +380,7 @@
       <button id="imagesBtn" class="primary">Generate visuals</button>
       <button id="stopBtn" class="stop hidden">■ Stop</button>
       <button id="nextTtsBtn" class="amber hidden">↻ Try next TTS</button>
+      <button id="nextImgBtn" class="amber hidden">↻ Try next image source</button>
       <button id="downloadBtn" class="ghost" disabled>Download WAV (lossless)</button>
       <button id="downloadMp3Btn" class="ghost" disabled>Download MP3 (small)</button>
       <button id="exportBtn" class="ghost" disabled>Export storyboard (HTML)</button>
@@ -465,6 +466,7 @@ syncTtsModelVis();
 // show the right per-image-provider fields
 function syncImgProviderVis(){
   const p=$("imgProvider").value;
+  $("nextImgBtn").classList.add("hidden");
   $("mImgField").classList.toggle("hidden", p!=="gemini");
   $("pollImgField").classList.toggle("hidden", p!=="pollinations");
   $("pollKeyField").classList.toggle("hidden", p!=="pollinations");
@@ -781,6 +783,31 @@ $("nextTtsBtn").onclick = ()=>{
   syncTtsModelVis();
   $("nextTtsBtn").classList.add("hidden");
   $("voicesBtn").click();   // resumes — only the missing lines, now with the new provider
+};
+
+// ---- "Try next image source": same idea for the image providers ----
+function nextImgProviderIndex(){
+  const opts=[...$("imgProvider").options], n=opts.length, i=$("imgProvider").selectedIndex;
+  for(let step=1; step<=n; step++){
+    const cand=opts[(i+step)%n].value;
+    if(cand==="custom-img" && !($("custImgUrl").value||"").trim()) continue;   // skip if not set up
+    return (i+step)%n;
+  }
+  return (i+1)%n;
+}
+function refreshNextImgBtn(incomplete){
+  const b=$("nextImgBtn");
+  if(!incomplete){ b.classList.add("hidden"); return; }
+  const opts=[...$("imgProvider").options], idx=nextImgProviderIndex();
+  b.textContent="↻ Try next image source — "+opts[idx].textContent.split(" — ")[0].trim();
+  b.classList.remove("hidden");
+}
+$("nextImgBtn").onclick = ()=>{
+  const sel=$("imgProvider"); sel.selectedIndex=nextImgProviderIndex();
+  localStorage.setItem("s2s_imgProvider", sel.value);
+  syncImgProviderVis();
+  $("nextImgBtn").classList.add("hidden");
+  $("imagesBtn").click();   // resumes — only the missing visuals, now with the new provider
 };
 
 // ======================= TTS PROVIDERS =======================
@@ -1134,7 +1161,7 @@ $("imagesBtn").onclick = async ()=>{
   const visuals=all.filter(b=>!b._img);                 // only what's missing
   if(!visuals.length){ st.textContent="All visuals already drawn."; return; }
   const already=all.length-visuals.length;
-  btn.disabled=true; cancelGen=false; $("stopBtn").classList.remove("hidden");
+  btn.disabled=true; cancelGen=false; $("stopBtn").classList.remove("hidden"); $("nextImgBtn").classList.add("hidden");
   for(let i=0;i<visuals.length;i++){
     if(cancelGen) break;
     const b=visuals[i];
@@ -1151,8 +1178,9 @@ $("imagesBtn").onclick = async ()=>{
   }
   const done=all.filter(b=>b._img).length;
   st.textContent = cancelGen ? `Stopped — ${done} of ${all.length} drawn. Click Generate visuals to continue.`
-    : (done===all.length ? "Visuals done — all "+done+"." : `Drew ${done} of ${all.length}. Click Generate visuals again to fill the rest.`);
+    : (done===all.length ? "Visuals done — all "+done+"." : `Drew ${done} of ${all.length}. Click Generate visuals again to fill the rest, or use Try next image source.`);
   $("stopBtn").classList.add("hidden");
+  refreshNextImgBtn(done < all.length);
   btn.disabled=false;
 };
 
