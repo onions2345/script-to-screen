@@ -450,7 +450,7 @@ $("voicesBtn").onclick = async ()=>{
   btn.disabled=true; cancelGen=false; $("stopBtn").classList.remove("hidden");
   const provider = $("ttsProvider").value, model = $("mTts").value.trim();
   const already = spoken.length - todo.length;
-  let hitDaily=false;
+  let hitDaily=false, fatalErr="";
   for(let i=0;i<todo.length;i++){
     if(cancelGen) break;
     const b=todo[i];
@@ -477,16 +477,18 @@ $("voicesBtn").onclick = async ()=>{
       }catch(e){
         lastErr=(e.message||"")+"";
         if(/per day|perday|daily|quota.*day/i.test(lastErr)){ hitDaily=true; break; }      // daily cap — stop, resume later
-        if(!/429|rate|resource_exhausted|quota|exhaust|overload|503|500/i.test(lastErr) && attempt>0){ break; } // not a rate error — don't hammer
+        const transient=/429|rate limit|rate_limit|resource_exhausted|quota|exhaust|overload|temporarily|unavailable|try again|timeout|503|500|502|504/i.test(lastErr);
+        if(!transient){ fatalErr=lastErr; break; }   // 403/CORS/"failed to fetch"/etc — a real problem, not a rate limit
         for(let s=Math.round(delay/1000);s>0 && !cancelGen;s--){ st.innerHTML=`<span class="spin"></span>Rate limit — waiting ${s}s, then continuing (${i} of ${todo.length})…`; await new Promise(r=>setTimeout(r,1000)); }
         delay=Math.min(delay*1.7,30000);
       }
     }
-    if(hitDaily || cancelGen) break;
+    if(hitDaily || cancelGen || fatalErr) break;
     if(!ok) $(b._id).querySelector(".slot").innerHTML=`<div class="style">Voice failed: ${escapeHtml(lastErr)}<br><strong>Your finished audio won't be lost.</strong> Try again in a minute, or change the voice provider in <a href="#" onclick="openSettings();return false;">Settings ⚙</a> — then click Generate voices to do just the rest.</div>`;
   }
   const done = spoken.filter(b=>b._pcm).length;
-  if(cancelGen) st.innerHTML = `Stopped — ${done} of ${spoken.length} voiced. <strong>Nothing's lost.</strong> Change the voice provider in <a href="#" onclick="openSettings();return false;">Settings ⚙</a>, then click Generate voices to continue the rest.`;
+  if(fatalErr) st.innerHTML = `Couldn't generate with this provider — ${escapeHtml(fatalErr)}<br><strong>Nothing you've made is lost.</strong> This isn't a rate limit; it usually means the provider needs setup (e.g. enabling the Cloud Text-to-Speech API) or can't be reached from the browser. Pick a different voice provider in <a href="#" onclick="openSettings();return false;">Settings ⚙</a>, then click Generate voices again.`;
+  else if(cancelGen) st.innerHTML = `Stopped — ${done} of ${spoken.length} voiced. <strong>Nothing's lost.</strong> Change the voice provider in <a href="#" onclick="openSettings();return false;">Settings ⚙</a>, then click Generate voices to continue the rest.`;
   else if(hitDaily) st.innerHTML = `Voiced ${done} of ${spoken.length}. Daily limit reached on this model. <strong>Your audio so far is safe.</strong> Try again in a minute, switch the voice model/provider in <a href="#" onclick="openSettings();return false;">Settings ⚙</a>, or come back after midnight Pacific — then Generate voices again.`;
   else st.innerHTML = done===spoken.length ? "Voices done — all "+done+" lines." : `Voiced ${done} of ${spoken.length}. <strong>What's done is saved.</strong> Try again in a minute, or change the voice provider in <a href="#" onclick="openSettings();return false;">Settings ⚙</a>, then click Generate voices to fill the rest.`;
   $("stopBtn").classList.add("hidden");
