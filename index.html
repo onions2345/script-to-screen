@@ -166,6 +166,9 @@
   button.primary{background:var(--shoot)}
   button.amber{background:var(--amber)}
   button.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
+  button.regen{font-size:12px;padding:6px 11px;border-radius:8px;margin:8px 0 0}
+  .slot audio{display:block;width:100%}
+  .slot .regen + img{margin-top:8px}
   .btnrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
   details.settings summary{cursor:pointer;font-family:var(--display);font-size:15px;list-style:none}
   details.settings summary::-webkit-details-marker{display:none}
@@ -724,31 +727,13 @@ $("voicesBtn").onclick = async ()=>{
   for(let i=0;i<todo.length;i++){
     if(cancelGen) break;
     const b=todo[i];
-    const onscreen = b.type==="onscreen";
-    const voice = onscreen ? (project.voiceCast["ON SCREEN"]||"Iapetus") : (project.voiceCast[b.speaker]||"Charon");
-    const styleInstr = onscreen ? "Read in a flat, cold, robotic computer-readout voice, slightly slow." : ("Speak in a "+(b.style||"natural, cinematic")+" tone.");
-    const geminiText = (onscreen ? "Read in a flat, cold, robotic computer-readout voice, slightly slow: " : ("Say in a "+(b.style||"natural, cinematic")+" tone: ")) + (b.text||"");
     let delay=4000, ok=false, lastErr="";
     for(let attempt=0;attempt<6 && !ok && !cancelGen;attempt++){
       st.innerHTML=`<span class="spin"></span>Voicing ${i+1} of ${todo.length}${already?` (${already} already done)`:""}…`;
       try{
-        const audio = provider==="gemini"
-          ? await tts(model, voice, geminiText)
-          : provider==="google-cloud"
-            ? await googleTTS(b.speaker, onscreen, (b.text||""))
-            : provider==="elevenlabs"
-              ? await elevenTTS(b.speaker, onscreen, (b.text||""))
-              : provider==="webspeech"
-                ? await webTTS(b.speaker, onscreen, (b.text||""))
-                : provider==="streamelements"
-                  ? await streamTTS(b.speaker, onscreen, (b.text||""))
-                  : provider==="custom"
-                    ? await customTTS(b.text||"")
-                    : await puterTTS(puterOpts(provider, b.speaker, onscreen, styleInstr), (b.text||""));
+        const audio = await ttsForBeat(b);
         b._pcm = audio.pcm; pcmRate = audio.rate;
-        const slot = $(b._id).querySelector(".slot");
-        slot.innerHTML=""; const a=document.createElement("audio"); a.controls=true;
-        a.src=URL.createObjectURL(wavBlob(audio.pcm,audio.rate)); slot.appendChild(a);
+        fillAudioSlot(b);
         ok=true;
       }catch(e){
         lastErr=(e.message||"")+"";
@@ -1193,8 +1178,7 @@ $("imagesBtn").onclick = async ()=>{
     st.innerHTML=`<span class="spin"></span>Drawing ${i+1} of ${visuals.length}${already?` (${already} already done)`:""}…`;
     try{
       const url=await genImage(b.prompt||"");
-      const slot=$(b._id).querySelector(".slot"); slot.innerHTML="";
-      b._img=url; const img=document.createElement("img"); img.src=url; slot.appendChild(img);
+      b._img=url; fillImageSlot(b);
     }catch(e){
       $(b._id).querySelector(".slot").innerHTML=`<div class="style">image failed: ${escapeHtml(e.message)} — click Generate visuals again to retry just this one, or switch image provider in <a href="#" onclick="openSettings();return false;">Settings ⚙</a>.</div>`;
     }
@@ -1233,10 +1217,63 @@ function restoreMedia(){
   let hasAudio=false;
   project.beats.forEach(b=>{
     const el=$(b._id); if(!el) return; const slot=el.querySelector(".slot"); if(!slot) return;
-    if(b._pcm){ hasAudio=true; slot.innerHTML=""; const a=document.createElement("audio"); a.controls=true; a.src=URL.createObjectURL(wavBlob(b._pcm,pcmRate)); slot.appendChild(a); }
-    else if(b._img){ slot.innerHTML=""; const im=document.createElement("img"); im.src=b._img; slot.appendChild(im); }
+    if(b._pcm){ hasAudio=true; fillAudioSlot(b); }
+    else if(b._img){ fillImageSlot(b); }
   });
   if(hasAudio) ["downloadBtn","downloadMp3Btn","videoBtn"].forEach(b=>$(b).disabled=false);
+}
+
+// ---------- per-beat slot rendering + Regenerate ----------
+// fillAudioSlot: the audio player, then a Regenerate button BELOW it.
+// fillImageSlot: a Regenerate button ABOVE, then the image.
+// Both are used by the generate loops AND by restoreMedia, so the buttons always show.
+function fillAudioSlot(b){
+  const slot=$(b._id)&&$(b._id).querySelector(".slot"); if(!slot) return;
+  slot.innerHTML="";
+  const a=document.createElement("audio"); a.controls=true; a.src=URL.createObjectURL(wavBlob(b._pcm,pcmRate)); slot.appendChild(a);
+  const btn=document.createElement("button"); btn.className="ghost regen"; btn.type="button"; btn.textContent="↻ Regenerate";
+  btn.onclick=()=>regenAudio(b,btn); slot.appendChild(btn);
+}
+function fillImageSlot(b){
+  const slot=$(b._id)&&$(b._id).querySelector(".slot"); if(!slot) return;
+  slot.innerHTML="";
+  const btn=document.createElement("button"); btn.className="ghost regen"; btn.type="button"; btn.textContent="↻ Regenerate";
+  btn.onclick=()=>regenImage(b,btn); slot.appendChild(btn);
+  const im=document.createElement("img"); im.src=b._img; slot.appendChild(im);
+}
+function regenFail(b,btn,prev,msg){
+  btn.disabled=false; btn.textContent=prev;
+  const slot=$(b._id)&&$(b._id).querySelector(".slot"); if(!slot) return;
+  const d=document.createElement("div"); d.className="style"; d.style.marginTop="8px"; d.innerHTML=msg; slot.appendChild(d);
+}
+async function regenAudio(b,btn){
+  const prev=btn.textContent; btn.disabled=true; btn.textContent="↻ regenerating…";
+  try{
+    if($("ttsProvider").value==="webspeech") await webCaptureSetup();   // click is a user gesture, so capture is allowed
+    const audio=await ttsForBeat(b);
+    b._pcm=audio.pcm; pcmRate=audio.rate;
+    fillAudioSlot(b);
+    ["downloadBtn","downloadMp3Btn","videoBtn"].forEach(id=>$(id).disabled=false);
+  }catch(e){ regenFail(b,btn,prev,"regenerate failed: "+linkify(escapeHtml(e.message||String(e)))+" — or switch voice provider in <a href=\"#\" onclick=\"openSettings();return false;\">Settings ⚙</a>."); }
+}
+async function regenImage(b,btn){
+  const prev=btn.textContent; btn.disabled=true; btn.textContent="↻ regenerating…";
+  try{ const url=await genImage(b.prompt||""); b._img=url; fillImageSlot(b); }
+  catch(e){ regenFail(b,btn,prev,"regenerate failed: "+escapeHtml(e.message||String(e))+" — or switch image provider in <a href=\"#\" onclick=\"openSettings();return false;\">Settings ⚙</a>."); }
+}
+// single-beat voice generation, using whatever provider/voice is set now (shared by the loop and Regenerate)
+async function ttsForBeat(b){
+  const provider=$("ttsProvider").value, model=$("mTts").value.trim(), onscreen=b.type==="onscreen";
+  const voice=onscreen?(project.voiceCast["ON SCREEN"]||"Iapetus"):(project.voiceCast[b.speaker]||"Charon");
+  const styleInstr=onscreen?"Read in a flat, cold, robotic computer-readout voice, slightly slow.":("Speak in a "+(b.style||"natural, cinematic")+" tone.");
+  const geminiText=(onscreen?"Read in a flat, cold, robotic computer-readout voice, slightly slow: ":("Say in a "+(b.style||"natural, cinematic")+" tone: "))+(b.text||"");
+  return provider==="gemini" ? tts(model,voice,geminiText)
+    : provider==="google-cloud" ? googleTTS(b.speaker,onscreen,b.text||"")
+    : provider==="elevenlabs" ? elevenTTS(b.speaker,onscreen,b.text||"")
+    : provider==="webspeech" ? webTTS(b.speaker,onscreen,b.text||"")
+    : provider==="streamelements" ? streamTTS(b.speaker,onscreen,b.text||"")
+    : provider==="custom" ? customTTS(b.text||"")
+    : puterTTS(puterOpts(provider,b.speaker,onscreen,styleInstr),b.text||"");
 }
 
 $("saveBtn").onclick = async ()=>{
