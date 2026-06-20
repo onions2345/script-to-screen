@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Script to Screen — Gemini voices + visuals</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --ink:#0b0e16;          /* deep navy, the script's "navy" */
+    --ink-2:#121626;
+    --panel:#161b2c;
+    --panel-2:#1c2236;
+    --line:#2a3146;
+    --text:#e7e9f2;
+    --muted:#9aa3bf;
+    --amber:#e9a13b;        /* voices */
+    --shoot:#5fb98a;        /* visuals / the green shoot */
+    --red:#e06a5a;
+    --display:'Space Grotesk',system-ui,sans-serif;
+    --body:'Inter',system-ui,sans-serif;
+    --mono:'JetBrains Mono',ui-monospace,monospace;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:
+      radial-gradient(900px 500px at 80% -10%, rgba(95,185,138,.10), transparent 60%),
+      radial-gradient(800px 500px at -10% 0%, rgba(233,161,59,.08), transparent 55%),
+      var(--ink);
+    color:var(--text);font-family:var(--body);line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:900px;margin:0 auto;padding:32px 20px 80px}
+  header.top{margin-bottom:8px}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--shoot);margin:0 0 10px}
+  h1{font-family:var(--display);font-weight:700;font-size:clamp(30px,6vw,48px);line-height:1.02;margin:0;letter-spacing:-.02em}
+  h1 .b{color:var(--amber)}
+  .lede{color:var(--muted);max-width:62ch;margin:14px 0 0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px;margin-top:22px}
+  .card h2{font-family:var(--display);font-weight:500;font-size:18px;margin:0 0 4px;letter-spacing:-.01em}
+  .step{font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:.1em}
+  label{display:block;font-size:13px;color:var(--muted);margin:12px 0 6px}
+  input[type=text],input[type=password],textarea,select{
+    width:100%;background:var(--ink-2);border:1px solid var(--line);color:var(--text);
+    border-radius:9px;padding:11px 12px;font-family:var(--body);font-size:14px;
+  }
+  textarea{min-height:200px;font-family:var(--mono);font-size:13px;line-height:1.5;resize:vertical}
+  input:focus,textarea:focus,select:focus{outline:2px solid var(--shoot);outline-offset:1px;border-color:transparent}
+  .row{display:flex;gap:12px;flex-wrap:wrap}
+  .row>div{flex:1 1 200px}
+  .hint{font-size:12px;color:var(--muted);margin-top:6px}
+  .hint code{font-family:var(--mono);background:var(--ink-2);padding:1px 5px;border-radius:5px;color:#cfd5ea}
+  .warn{border-left:3px solid var(--amber);background:rgba(233,161,59,.07);padding:10px 12px;border-radius:0 8px 8px 0;font-size:13px;color:#f0d9ad;margin-top:12px}
+  button{
+    font-family:var(--display);font-weight:500;font-size:14px;cursor:pointer;border:none;border-radius:9px;
+    padding:11px 18px;color:var(--ink);background:var(--text);transition:transform .05s ease, filter .15s ease;
+  }
+  button:hover{filter:brightness(1.05)}
+  button:active{transform:translateY(1px)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button.primary{background:var(--shoot)}
+  button.amber{background:var(--amber)}
+  button.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
+  .btnrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+  details.settings summary{cursor:pointer;font-family:var(--display);font-size:15px;list-style:none}
+  details.settings summary::-webkit-details-marker{display:none}
+  details.settings summary::before{content:'⚙  ';color:var(--muted)}
+  .cast{width:100%;border-collapse:collapse;margin-top:8px;font-size:14px}
+  .cast td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+  .cast td:first-child{font-family:var(--mono);color:var(--amber);white-space:nowrap}
+  .cast select{padding:7px 9px}
+  .beat{border:1px solid var(--line);border-radius:11px;padding:14px;margin-top:12px;background:var(--panel-2)}
+  .beat .who{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px}
+  .beat .who.line{color:var(--amber)}
+  .beat .who.onscreen{color:var(--muted)}
+  .beat .who.visual{color:var(--shoot)}
+  .beat p{margin:0}
+  .beat .style{font-size:12px;color:var(--muted);margin-top:6px;font-style:italic}
+  .beat audio{width:100%;margin-top:10px}
+  .beat img{width:100%;border-radius:8px;margin-top:10px;display:block}
+  .beat .cap{font-family:var(--mono);font-size:12px;color:var(--shoot);margin-top:8px}
+  .status{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:12px;white-space:pre-wrap}
+  .spin{display:inline-block;width:11px;height:11px;border:2px solid var(--line);border-top-color:var(--shoot);border-radius:50%;animation:s .7s linear infinite;vertical-align:-1px;margin-right:6px}
+  @keyframes s{to{transform:rotate(360deg)}}
+  .hidden{display:none}
+  footer{margin-top:40px;color:var(--muted);font-size:12px;text-align:center}
+  a{color:var(--shoot)}
+  @media (prefers-reduced-motion: reduce){.spin{animation:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <p class="eyebrow">A table read, generated</p>
+    <h1>Script <span class="b">to</span> Screen</h1>
+    <p class="lede">Paste a script. Gemini works out who speaks each line and casts a voice, reads it aloud, and sketches the visual beats — then stitches the voices into one audio track. Runs entirely in your browser.</p>
+  </header>
+
+  <!-- SETTINGS -->
+  <div class="card">
+    <details class="settings" open>
+      <summary>Setup &amp; keys</summary>
+      <label for="key">Gemini API key</label>
+      <input id="key" type="password" placeholder="Paste your key from aistudio.google.com/apikey" autocomplete="off" />
+      <div class="hint">No key yet? <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Get a free one from Google AI Studio</a> — sign in with Google, click "Create API key," paste it here. Each visitor uses their own key; keys can't be handed out by a login button.</div>
+      <div class="warn"><strong>Your key stays in this browser only</strong> (saved to localStorage on this device). Never commit it to the repo — GitHub Pages is public. For safety, restrict the key to your Pages URL in Google Cloud Console → Credentials → HTTP referrers.</div>
+      <div class="row">
+        <div>
+          <label for="mText">Text model (parsing)</label>
+          <input id="mText" type="text" value="gemini-2.5-flash" />
+        </div>
+        <div>
+          <label for="mTts">Voice model (TTS)</label>
+          <input id="mTts" type="text" value="gemini-2.5-flash-preview-tts" />
+        </div>
+        <div>
+          <label for="mImg">Image model</label>
+          <input id="mImg" type="text" value="gemini-2.5-flash-image" />
+        </div>
+      </div>
+      <div class="hint">Model names change. If one 404s, try newer IDs: TTS <code>gemini-3.1-flash-tts-preview</code>, image <code>gemini-3.1-flash-image-preview</code>, text <code>gemini-3-flash</code>. The free tier is generous but rate-limited (~10 image calls/min).</div>
+    </details>
+  </div>
+
+  <!-- STEP 1: SCRIPT -->
+  <div class="card">
+    <p class="step">STEP 1</p>
+    <h2>Your script</h2>
+    <p class="hint">Any format works — labelled (<code>NARRATOR:</code> / <code>ON SCREEN:</code>) or plain prose. Gemini figures out the structure.</p>
+    <textarea id="script" spellcheck="false"></textarea>
+    <div class="btnrow">
+      <button id="analyzeBtn" class="primary">Analyze script</button>
+      <button id="sampleBtn" class="ghost">Load sample</button>
+    </div>
+    <div id="analyzeStatus" class="status"></div>
+  </div>
+
+  <!-- STEP 2: BREAKDOWN -->
+  <div id="breakdownCard" class="card hidden">
+    <p class="step">STEP 2</p>
+    <h2 id="projTitle">Breakdown &amp; casting</h2>
+    <p class="hint">Each character is cast to a Gemini voice. Change any of them, then generate.</p>
+    <table class="cast"><tbody id="castBody"></tbody></table>
+    <div class="btnrow">
+      <button id="voicesBtn" class="amber">Generate voices</button>
+      <button id="imagesBtn" class="primary">Generate visuals</button>
+      <button id="downloadBtn" class="ghost" disabled>Download WAV (lossless)</button>
+      <button id="downloadMp3Btn" class="ghost" disabled>Download MP3 (small)</button>
+    </div>
+    <div id="genStatus" class="status"></div>
+  </div>
+
+  <!-- STEP 3: OUTPUT -->
+  <div id="storyCard" class="card hidden">
+    <p class="step">STEP 3</p>
+    <h2>Storyboard</h2>
+    <div id="beats"></div>
+  </div>
+
+  <footer>Built to run on GitHub Pages. Powered by your own Gemini key — nothing is sent anywhere except Google's API.</footer>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const API = "https://generativelanguage.googleapis.com/v1beta/models/";
+
+// Gemini prebuilt TTS voices (subset; all selectable in the dropdowns)
+const VOICES = ["Charon","Kore","Puck","Aoede","Fenrir","Iapetus","Algenib","Zephyr","Leda","Orus","Schedar","Algieba","Despina","Enceladus","Achernar","Alnilam","Sadachbia","Gacrux"];
+
+const SAMPLE = `[PART CARD] PROLOGUE
+
+NARRATOR: Start with a single point of green light. Small. Alive. Like a seed.
+
+ON SCREEN: Three million staff. Already assisted.
+
+NARRATOR: A thousand quiet machines already do the work, and every one is blind to the others. This is the story of what happens when they finally see. It's called Time Tree.
+
+NARRATOR: It begins in a city council meeting. In the corner, a small device with one soft light. And one councillor who can't stop watching it — Elena Rees.
+
+REES: You notice more when you write it down.
+
+ON SCREEN: Note. This contradicts the budget you approved on Tuesday.`;
+
+// ---------- config persistence (local only) ----------
+const cfgKeys = ["key","mText","mTts","mImg"];
+cfgKeys.forEach(k=>{ const v=localStorage.getItem("s2s_"+k); if(v!==null) $(k).value=v; });
+cfgKeys.forEach(k=> $(k).addEventListener("input",()=>localStorage.setItem("s2s_"+k,$(k).value)));
+
+$("sampleBtn").onclick = ()=>{ $("script").value = SAMPLE; };
+if(!$("script").value) $("script").value = SAMPLE;
+
+// ---------- helpers ----------
+function getKey(){ const k=$("key").value.trim(); if(!k) throw new Error("Add your Gemini API key in Setup first."); return k; }
+
+async function gemini(model, body){
+  const res = await fetch(API+encodeURIComponent(model)+":generateContent?key="+encodeURIComponent(getKey()),{
+    method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)
+  });
+  if(!res.ok){
+    let detail=""; try{ detail=(await res.json()).error?.message||""; }catch(e){}
+    throw new Error("API "+res.status+": "+(detail||res.statusText));
+  }
+  return res.json();
+}
+
+function b64ToBytes(b64){ const bin=atob(b64); const a=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)a[i]=bin.charCodeAt(i); return a; }
+
+function wavBlob(pcm, rate){
+  const ch=1,bps=16,blockAlign=ch*bps/8,byteRate=rate*blockAlign,size=pcm.length;
+  const buf=new ArrayBuffer(44+size),v=new DataView(buf);let p=0;
+  const str=s=>{for(let i=0;i<s.length;i++)v.setUint8(p++,s.charCodeAt(i))};
+  const u32=n=>{v.setUint32(p,n,true);p+=4}, u16=n=>{v.setUint16(p,n,true);p+=2};
+  str("RIFF");u32(36+size);str("WAVE");str("fmt ");u32(16);u16(1);u16(ch);u32(rate);u32(byteRate);u16(blockAlign);u16(bps);str("data");u32(size);
+  new Uint8Array(buf,44).set(pcm);
+  return new Blob([buf],{type:"audio/wav"});
+}
+
+// ---------- STEP 1: analyze ----------
+let project = null;       // {title, voiceCast, beats}
+let pcmRate = 24000;
+
+$("analyzeBtn").onclick = async ()=>{
+  const btn=$("analyzeBtn"), st=$("analyzeStatus");
+  const script=$("script").value.trim();
+  if(!script){ st.textContent="Paste a script first."; return; }
+  btn.disabled=true; st.innerHTML='<span class="spin"></span>Reading the script…';
+  const prompt =
+`You are a script supervisor. Read the SCRIPT below and return STRICT JSON only (no prose, no markdown fences).
+Schema:
+{
+ "title": string,
+ "voiceCast": { "<SPEAKER LABEL>": "<one voice from the allowed list>" , ... },
+ "beats": [
+   {"type":"line","speaker":"<label>","text":"<exact spoken words>","style":"<short delivery note>"},
+   {"type":"onscreen","text":"<exact on-screen system text>","style":"flat robotic computer readout"},
+   {"type":"visual","prompt":"<vivid image-generation prompt for this moment>","caption":"<short on-screen label or empty>"}
+ ]
+}
+Rules:
+- Keep "line" and "onscreen" text VERBATIM from the script. Do not invent dialogue.
+- Treat system/UI text (e.g. lines marked ON SCREEN, or screen readouts) as type "onscreen".
+- Add type "visual" beats at scene openings, title cards, and strong imagery — about one every 3-5 lines. Write cinematic, concrete image prompts (no on-screen text in the image).
+- Cast each speaker to a fitting voice. Allowed voices ONLY: ${VOICES.join(", ")}. Use one consistent voice per speaker.
+- Order beats exactly as they occur in the script.
+
+SCRIPT:
+${script}`;
+  try{
+    const data = await gemini($("mText").value.trim(), {
+      contents:[{parts:[{text:prompt}]}],
+      generationConfig:{ responseMimeType:"application/json", temperature:0.4 }
+    });
+    let txt = data.candidates?.[0]?.content?.parts?.map(p=>p.text).join("")||"";
+    txt = txt.replace(/^```json\s*|\s*```$/g,"").trim();
+    project = JSON.parse(txt);
+    project.beats.forEach((b,i)=> b._id="b"+i);
+    renderBreakdown();
+    st.textContent="Done — "+project.beats.length+" beats, "+Object.keys(project.voiceCast||{}).length+" voices cast.";
+  }catch(e){
+    st.textContent="Couldn't parse: "+e.message+"\nTip: if it's a model error, check the model name in Setup.";
+  }finally{ btn.disabled=false; }
+};
+
+function renderBreakdown(){
+  $("projTitle").textContent = (project.title||"Breakdown")+" — casting";
+  const cast=$("castBody"); cast.innerHTML="";
+  Object.entries(project.voiceCast||{}).forEach(([sp,voice])=>{
+    const tr=document.createElement("tr");
+    const opts=VOICES.map(v=>`<option ${v===voice?"selected":""}>${v}</option>`).join("");
+    tr.innerHTML=`<td>${sp}</td><td><select data-sp="${sp}">${opts}</select></td>`;
+    cast.appendChild(tr);
+  });
+  cast.querySelectorAll("select").forEach(s=> s.onchange=()=> project.voiceCast[s.dataset.sp]=s.value);
+  renderBeats();
+  $("breakdownCard").classList.remove("hidden");
+  $("storyCard").classList.remove("hidden");
+}
+
+function renderBeats(){
+  const wrap=$("beats"); wrap.innerHTML="";
+  project.beats.forEach(b=>{
+    const el=document.createElement("div"); el.className="beat"; el.id=b._id;
+    if(b.type==="visual"){
+      el.innerHTML=`<div class="who visual">Visual</div><p>${escapeHtml(b.prompt||"")}</p>${b.caption?`<div class="cap">${escapeHtml(b.caption)}</div>`:""}<div class="slot"></div>`;
+    }else{
+      const who = b.type==="onscreen" ? "On screen" : (b.speaker||"Line");
+      el.innerHTML=`<div class="who ${b.type}">${escapeHtml(who)}</div><p>${escapeHtml(b.text||"")}</p>${b.style?`<div class="style">${escapeHtml(b.style)}</div>`:""}<div class="slot"></div>`;
+    }
+    wrap.appendChild(el);
+  });
+}
+function escapeHtml(s){return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+
+// ---------- STEP 3a: voices ----------
+$("voicesBtn").onclick = async ()=>{
+  if(!project) return;
+  const btn=$("voicesBtn"), st=$("genStatus");
+  const spoken = project.beats.filter(b=>b.type==="line"||b.type==="onscreen");
+  btn.disabled=true;
+  for(let i=0;i<spoken.length;i++){
+    const b=spoken[i];
+    st.innerHTML=`<span class="spin"></span>Voicing ${i+1} of ${spoken.length}…`;
+    try{
+      const voice = b.type==="onscreen" ? (project.voiceCast["ON SCREEN"]||"Iapetus") : (project.voiceCast[b.speaker]||"Charon");
+      const instruct = b.type==="onscreen"
+        ? "Read in a flat, cold, robotic computer-readout voice, slightly slow: "
+        : "Say in a "+(b.style||"natural, cinematic")+" tone: ";
+      const audio = await tts($("mTts").value.trim(), voice, instruct + (b.text||""));
+      b._pcm = audio.pcm; pcmRate = audio.rate;
+      const slot = $(b._id).querySelector(".slot");
+      slot.innerHTML=""; const a=document.createElement("audio"); a.controls=true;
+      a.src=URL.createObjectURL(wavBlob(audio.pcm,audio.rate)); slot.appendChild(a);
+    }catch(e){
+      $(b._id).querySelector(".slot").innerHTML=`<div class="style">voice failed: ${escapeHtml(e.message)}</div>`;
+    }
+  }
+  st.textContent="Voices done.";
+  $("downloadBtn").disabled=false;
+  $("downloadMp3Btn").disabled=false;
+  btn.disabled=false;
+};
+
+async function tts(model, voice, text){
+  const body={ contents:[{parts:[{text}]}],
+    generationConfig:{ responseModalities:["AUDIO"],
+      speechConfig:{ voiceConfig:{ prebuiltVoiceConfig:{ voiceName:voice } } } } };
+  // retry once: TTS preview models occasionally return a text token instead of audio
+  for(let attempt=0;attempt<2;attempt++){
+    const data=await gemini(model,body);
+    const part=data.candidates?.[0]?.content?.parts?.find(p=>p.inlineData);
+    if(part){
+      const m=/rate=(\d+)/.exec(part.inlineData.mimeType||""); 
+      return { pcm:b64ToBytes(part.inlineData.data), rate:m?parseInt(m[1]):24000 };
+    }
+  }
+  throw new Error("no audio returned (try the 3.1 TTS model name)");
+}
+
+$("downloadBtn").onclick = ()=>{
+  const parts = project.beats.filter(b=>(b.type==="line"||b.type==="onscreen")&&b._pcm).map(b=>b._pcm);
+  if(!parts.length) return;
+  const total=parts.reduce((n,p)=>n+p.length,0);
+  const all=new Uint8Array(total); let o=0; parts.forEach(p=>{all.set(p,o);o+=p.length;});
+  const url=URL.createObjectURL(wavBlob(all,pcmRate));
+  const a=document.createElement("a"); a.href=url; a.download=(project.title||"script")+".wav"; a.click();
+};
+
+$("downloadMp3Btn").onclick = async ()=>{
+  const parts = project.beats.filter(b=>(b.type==="line"||b.type==="onscreen")&&b._pcm).map(b=>b._pcm);
+  if(!parts.length) return;
+  const st=$("genStatus"); st.innerHTML='<span class="spin"></span>Encoding MP3…';
+  try{
+    const mod = await import("https://esm.run/@breezystack/lamejs");
+    const Mp3Encoder = mod.Mp3Encoder || (mod.default && mod.default.Mp3Encoder);
+    if(!Mp3Encoder) throw new Error("encoder unavailable");
+    const total=parts.reduce((n,p)=>n+p.length,0);
+    const all=new Uint8Array(total); let o=0; parts.forEach(p=>{all.set(p,o);o+=p.length;});
+    const samples=new Int16Array(all.buffer, 0, Math.floor(total/2));
+    const enc=new Mp3Encoder(1, pcmRate, 96);   // mono, 96 kbps — plenty for speech
+    const out=[], block=1152;
+    for(let i=0;i<samples.length;i+=block){
+      const buf=enc.encodeBuffer(samples.subarray(i,i+block));
+      if(buf.length) out.push(new Uint8Array(buf));
+    }
+    const tail=enc.flush(); if(tail.length) out.push(new Uint8Array(tail));
+    const url=URL.createObjectURL(new Blob(out,{type:"audio/mpeg"}));
+    const a=document.createElement("a"); a.href=url; a.download=(project.title||"script")+".mp3"; a.click();
+    st.textContent="MP3 ready (about a tenth the size of the WAV).";
+  }catch(e){
+    st.textContent="MP3 encoding failed ("+e.message+"). The WAV download still works.";
+  }
+};
+
+// ---------- STEP 3b: visuals ----------
+$("imagesBtn").onclick = async ()=>{
+  if(!project) return;
+  const btn=$("imagesBtn"), st=$("genStatus");
+  const visuals=project.beats.filter(b=>b.type==="visual");
+  btn.disabled=true;
+  for(let i=0;i<visuals.length;i++){
+    const b=visuals[i];
+    st.innerHTML=`<span class="spin"></span>Drawing ${i+1} of ${visuals.length}…`;
+    try{
+      const data=await gemini($("mImg").value.trim(),{
+        contents:[{parts:[{text:"Cinematic film still, atmospheric, no text or words in image. "+(b.prompt||"")}]}],
+        generationConfig:{ responseModalities:["IMAGE","TEXT"] }
+      });
+      const part=data.candidates?.[0]?.content?.parts?.find(p=>p.inlineData);
+      const slot=$(b._id).querySelector(".slot"); slot.innerHTML="";
+      if(part){ const img=document.createElement("img"); img.src="data:"+(part.inlineData.mimeType||"image/png")+";base64,"+part.inlineData.data; slot.appendChild(img); }
+      else slot.innerHTML='<div class="style">no image returned</div>';
+    }catch(e){
+      $(b._id).querySelector(".slot").innerHTML=`<div class="style">image failed: ${escapeHtml(e.message)}</div>`;
+    }
+    await new Promise(r=>setTimeout(r,800)); // gentle on the free-tier rate limit
+  }
+  st.textContent="Visuals done.";
+  btn.disabled=false;
+};
+</script>
+</body>
+</html>
