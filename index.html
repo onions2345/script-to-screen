@@ -135,7 +135,6 @@
     <textarea id="script" spellcheck="false"></textarea>
     <div class="btnrow">
       <button id="analyzeBtn" class="primary">Analyze script</button>
-      <button id="sampleBtn" class="ghost">Load sample</button>
     </div>
     <div id="analyzeStatus" class="status"></div>
   </div>
@@ -194,7 +193,6 @@ const cfgKeys = ["key","mText","mTts","mImg"];
 cfgKeys.forEach(k=>{ const v=localStorage.getItem("s2s_"+k); if(v!==null) $(k).value=v; });
 cfgKeys.forEach(k=> $(k).addEventListener("input",()=>localStorage.setItem("s2s_"+k,$(k).value)));
 
-$("sampleBtn").onclick = ()=>{ $("script").value = SAMPLE; };
 if(!$("script").value) $("script").value = SAMPLE;
 
 // ---------- page-open counter (free, no signup; count is public) ----------
