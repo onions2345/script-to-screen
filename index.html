@@ -506,11 +506,12 @@ $("voicesBtn").onclick = async ()=>{
   if(fatalErr){
     const isCloud=/cloud text-to-speech|texttospeech/i.test(fatalErr);
     const note = isCloud
-      ? `This enables it for the Google Cloud project tied to the key you entered on this device — a project number unique to you, and you only do it once. Note: Cloud Text-to-Speech is only free up to a monthly limit, so keep an eye on your usage.`
+      ? `<strong>To fix this:</strong> open the <em>console.developers.google.com…</em> link in the message above <strong>while signed in to the Google account that owns this key</strong> (a logged-out or incognito window can't enable it). On the page that opens, click the blue <strong>Enable</strong> button, wait a minute or two, then come back and click <strong>Generate voices</strong> again.<br><br>The project number in the error is the Google Cloud project that owns the API key you're using — not something this app created. Anyone using their own key enables it on their own project, just once. Note: Cloud Text-to-Speech is only free up to a monthly limit, so keep an eye on your usage.`
       : `This isn't a rate limit — it usually means the provider needs setup, or can't be reached from the browser.`;
     st.innerHTML = `<div>Couldn't generate with this provider:</div>`
       + `<div style="white-space:pre-wrap;margin:6px 0;padding:10px;border:1px solid var(--line);border-radius:8px;font-family:var(--mono);font-size:12px">${linkify(escapeHtml(fatalErr))}</div>`
-      + `<div style="margin-top:14px">${note} <strong>Nothing you've made is lost.</strong> Tap the link above to enable it, or pick a different voice provider in <a href="#" onclick="openSettings();return false;">Settings ⚙</a>, then click Generate voices again.</div>`;
+      + `<div style="margin-top:14px">${note}</div>`
+      + `<div style="margin-top:14px"><strong>Nothing you've made is lost.</strong> ${isCloud?"Don't want to set that up? ":""}Pick a different voice provider in <a href="#" onclick="openSettings();return false;">Settings ⚙</a>, then click Generate voices again.</div>`;
   }
   else if(cancelGen) st.innerHTML = `Stopped — ${done} of ${spoken.length} voiced. <strong>Nothing's lost.</strong> Change the voice provider in <a href="#" onclick="openSettings();return false;">Settings ⚙</a>, then click Generate voices to continue the rest.`;
   else if(hitDaily) st.innerHTML = `Voiced ${done} of ${spoken.length}. Daily limit reached on this model. <strong>Your audio so far is safe.</strong> Try again in a minute, switch the voice model/provider in <a href="#" onclick="openSettings();return false;">Settings ⚙</a>, or come back after midnight Pacific — then Generate voices again.`;
