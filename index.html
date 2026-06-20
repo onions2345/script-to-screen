@@ -86,6 +86,7 @@
   @keyframes s{to{transform:rotate(360deg)}}
   .hidden{display:none}
   footer{margin-top:40px;color:var(--muted);font-size:12px;text-align:center}
+  .hits{font-family:var(--mono);color:var(--shoot);font-size:13px;margin-bottom:8px;min-height:1em}
   a{color:var(--shoot)}
   @media (prefers-reduced-motion: reduce){.spin{animation:none}}
 </style>
@@ -162,7 +163,10 @@
     <div id="beats"></div>
   </div>
 
-  <footer>Built to run on GitHub Pages. Powered by your own Gemini key — nothing is sent anywhere except Google's API.</footer>
+  <footer>
+    <div id="hits" class="hits"></div>
+    Built to run on GitHub Pages. Powered by your own Gemini key — nothing is sent anywhere except Google's API.
+  </footer>
 </div>
 
 <script>
@@ -193,6 +197,17 @@ cfgKeys.forEach(k=> $(k).addEventListener("input",()=>localStorage.setItem("s2s_
 
 $("sampleBtn").onclick = ()=>{ $("script").value = SAMPLE; };
 if(!$("script").value) $("script").value = SAMPLE;
+
+// ---------- page-open counter (free, no signup; count is public) ----------
+(async function countOpen(){
+  const el=$("hits"); if(!el) return;
+  const ns="onions2345-script-to-screen", key="opens";
+  const read = async url => { const r=await fetch(url); if(!r.ok) throw 0; const d=await r.json(); const n=d.value ?? d.count; if(n==null) throw 0; return n; };
+  let n=null;
+  try{ n = await read(`https://abacus.jasoncameron.dev/hit/${ns}/${key}`); }
+  catch(e){ try{ n = await read(`https://countapi.mileshilliard.com/api/v1/hit/${ns}_${key}`); }catch(e2){} }
+  if(n!=null) el.textContent = "👁  Opened "+Number(n).toLocaleString()+" times";
+})();
 
 // ---------- helpers ----------
 function getKey(){ const k=$("key").value.trim(); if(!k) throw new Error("Add your Gemini API key in Setup first."); return k; }
