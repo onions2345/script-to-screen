@@ -69,6 +69,6 @@ GitHub Pages is **public**, so never paste your key into a committed file — th
 
 ## Why I built it
 
-I kept hitting paywalls and tiny character limits on every "free" voice site, and none of them could take a whole script with different characters and just *do it*. So I built the tool I wanted — free, open, and all in one page. I think it's the best free option I've come across. Use it, fork it, make it better.
+I kept hitting paywalls and tiny character limits on every "free" voice site, and none of them could take a whole script with different characters and just *do it*. So I built the tool I wanted — free, open, and all in one page. I think it's the best free option I've come across. 
 
-*Built by [onions2345](https://github.com/onions2345).*
+*Built by [https://mvandiermen.com/](https://mvandiermen.com/).*
