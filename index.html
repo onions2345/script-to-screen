@@ -1,4 +1,74 @@
 <!DOCTYPE html>
+<!--
+==================================================================================
+  SCRIPT TO SCREEN  —  single-file, no-build, static web app
+  Live: https://onions2345.github.io/script-to-screen/   (GitHub Pages, public repo)
+==================================================================================
+
+  WHAT IT DOES
+  Paste a script/screenplay -> "Analyze" uses a Gemini TEXT model to turn it into a
+  structured project (title, a voice cast mapping each speaker to a voice, and an
+  ordered list of "beats"). Then you "Generate voices" (text-to-speech per spoken
+  line) and "Generate visuals" (an image per visual beat). Finally you can export:
+  a WAV, an MP3, a self-contained storyboard HTML, or a rendered WebM video.
+
+  HOW IT'S BUILT (important for anyone editing this)
+  - ONE file. No framework, no bundler, no server. Plain HTML + CSS + vanilla JS.
+    The only external scripts are Puter (js.puter.com), and esm.run modules loaded
+    on demand (e.g. the MP3 encoder). Everything else is hand-rolled so it can run
+    straight off GitHub Pages with zero build step.
+  - BRING-YOUR-OWN-KEY. The user pastes their own Gemini API key; it is stored ONLY
+    in their browser (localStorage), never sent anywhere except Google's API. There
+    is no backend and no secret of ours in this file. Treat it as fully client-side.
+  - State lives in a single global `project` object. Each beat carries its own audio
+    (`_pcm`, raw PCM bytes) and image (`_img`, a data: URL) once generated, so the
+    exporters and the video renderer just read straight off the beats.
+
+  THE DATA MODEL
+  project = {
+    title,
+    voiceCast: { "SPEAKER NAME": "VoiceName", ... , "ON SCREEN": "VoiceName" },
+    beats: [
+      { type:"line"|"onscreen"|"visual", speaker, text, style, prompt, caption,
+        _id:"b0"..., _pcm:Uint8Array (audio, added later), _img:dataURL (added later) }
+    ]
+  }
+  - "line"    = a character's spoken line.        -> gets TTS audio.
+  - "onscreen"= robotic on-screen system text.    -> gets TTS audio (cold/robotic).
+  - "visual"  = a shot description (no speech).    -> gets a generated image.
+
+  PROVIDERS (all pluggable; each is just a function returning the same shape)
+  - Voices: Gemini API (default), Google Cloud TTS, ElevenLabs, StreamElements,
+    Puter (Gemini/OpenAI/Polly/xAI/ElevenLabs), Custom OpenAI-compatible, and an
+    experimental "Browser voice" that records the device's speechSynthesis by
+    capturing this tab's audio. Every non-Gemini provider funnels its audio through
+    decodeToPCM24() so the whole pipeline speaks the same format (24kHz mono PCM).
+  - Images: Gemini API (default), Pollinations (free/no key), Puter (free/no key),
+    Custom OpenAI-compatible. All return a data: URL so video/storyboard can embed.
+
+  KEY GOTCHAS (so future-you doesn't relearn them the hard way)
+  - Gemini TTS via the generativelanguage generateContent endpoint needs the
+    "-preview-tts" model names (gemini-2.5-flash-preview-tts, etc.). The Cloud TTS
+    names (gemini-2.5-flash-tts) are a DIFFERENT product and 404 here.
+  - Gemini has a per-model-per-day TTS cap (~100). Switching model/provider is the
+    workaround; that's why there's a "Try next TTS" failover button.
+  - Video export is WebM (canvas.captureStream + MediaRecorder), recorded in REAL
+    TIME (so a 3-min film takes ~3 min to render). Some sites reject WebM -> tell
+    users to re-wrap to MP4 in a free editor. There is no in-browser MP4 muxer here.
+  - "Ken Burns" motion is pure canvas math at render time on existing images: it
+    uses NO API and NO credits, but it can only animate images that already exist.
+  - Generators are RESUMABLE: they only process beats missing _pcm/_img, so clicking
+    again (or after switching provider) fills gaps without redoing finished work.
+  - Config <select>s only restore a saved value if it still matches an option, so
+    renaming/removing an option safely falls back to the default on next load.
+
+  WHERE TO LOOK
+  Search the JS for these banner comments: "config persistence", "STEP 2: analyze",
+  "STEP 3a: voices", "STEP 3b: visuals", "TTS providers", "image generation",
+  "video render", "projects" (IndexedDB save/open). The HTML above the script
+  block is the UI; the gear (settings) panel holds all provider/model choices.
+==================================================================================
+-->
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -222,11 +292,36 @@
     <h3>Video &amp; image generation</h3>
     <div class="row">
       <div>
-        <label for="mImg">Image model</label>
+        <label for="imgProvider">Image provider</label>
+        <select id="imgProvider">
+          <option value="gemini" selected>Gemini API — your key &amp; quota</option>
+          <option value="pollinations">Pollinations — free, no key (Flux)</option>
+          <option value="puter">Puter — free, no key (Flux / GPT Image / etc.)</option>
+          <option value="custom-img">Custom / OpenAI-compatible image endpoint</option>
+        </select>
+      </div>
+      <div id="mImgField">
+        <label for="mImg">Gemini image model</label>
         <select id="mImg">
           <option value="gemini-2.5-flash-image" selected>gemini-2.5-flash-image — default</option>
           <option value="gemini-3-pro-image-preview">gemini-3-pro-image-preview — newest (Nano Banana)</option>
           <option value="gemini-3.1-flash-image-preview">gemini-3.1-flash-image-preview</option>
+        </select>
+      </div>
+      <div id="pollImgField" class="hidden">
+        <label for="pollModel">Pollinations model</label>
+        <select id="pollModel">
+          <option value="flux" selected>flux — free, default</option>
+          <option value="turbo">turbo — faster</option>
+        </select>
+      </div>
+      <div id="puterImgField" class="hidden">
+        <label for="puterImgModel">Puter image model</label>
+        <select id="puterImgModel">
+          <option value="gemini-2.5-flash-image-preview" selected>Nano Banana (Gemini) — default</option>
+          <option value="black-forest-labs/flux-1.1-pro">FLUX 1.1 Pro</option>
+          <option value="gpt-image-2">GPT Image 2</option>
+          <option value="dall-e-3">DALL·E 3</option>
         </select>
       </div>
       <div>
@@ -236,8 +331,30 @@
           <option value="960x540">540p (960×540) — smaller file</option>
         </select>
       </div>
+      <div>
+        <label for="vidMotion">Motion</label>
+        <select id="vidMotion">
+          <option value="kenburns" selected>Ken Burns + crossfade (default)</option>
+          <option value="crossfade">Crossfade only</option>
+          <option value="none">None (static)</option>
+        </select>
+      </div>
     </div>
-    <div class="hint">The image model draws the visuals used in the storyboard and video. Lower resolution makes the rendered video smaller.</div>
+    <div id="pollKeyField" class="hidden">
+      <label for="pollKey">Pollinations key (optional)</label>
+      <input id="pollKey" type="password" placeholder="pk_… — only if you hit rate limits" autocomplete="off">
+      <div class="hint">Pollinations is free with no key. If images start failing from rate limits, get a free <strong>publishable</strong> key (starts <code>pk_</code>) at <a href="https://enter.pollinations.ai" target="_blank" rel="noopener">enter.pollinations.ai</a> — paste it here. Stored only in this browser.</div>
+    </div>
+    <div id="customImgField" class="hidden">
+      <label for="custImgUrl">Image endpoint base URL</label>
+      <input id="custImgUrl" type="text" placeholder="https://your-server.example  (OpenAI-style /v1/images/generations)" autocomplete="off">
+      <label for="custImgModel">Model (optional)</label>
+      <input id="custImgModel" type="text" placeholder="e.g. flux, sdxl, dall-e-3" autocomplete="off">
+      <label for="custImgKey">API key (optional)</label>
+      <input id="custImgKey" type="password" placeholder="Bearer token if your server needs one" autocomplete="off">
+      <div class="hint">Any OpenAI-compatible image server: a local Stable Diffusion bridge, LocalAI, or a hosted endpoint. The app POSTs to <code>/v1/images/generations</code> and reads <code>b64_json</code> (or a returned URL).</div>
+    </div>
+    <div class="hint">The image provider draws the visuals used in the storyboard and video. <strong>Pollinations</strong> and <strong>Puter</strong> need no key (Puter may ask you to sign in to your free Puter account, which pays for its own usage). <strong>Motion</strong> animates those stills while the video records — a slow zoom/pan (Ken Burns) and a fade between shots, done in your browser with <strong>no API and no credits</strong>. Lower resolution makes the file smaller.</div>
   </div>
 
   <!-- STEP 1: SCRIPT -->
@@ -284,6 +401,21 @@
 </div>
 
 <script>
+/* ----------------------------------------------------------------------------
+   APP CODE (vanilla JS). Orientation for editors:
+   - `$` is just getElementById. `API` is the Gemini generativelanguage base URL.
+   - The whole app revolves around the global `project` object (see file-top header
+     for its shape). It's set by Analyze, mutated in place as audio/images generate,
+     and read by every exporter.
+   - Flow of control: Analyze (Gemini text -> project) -> render the beats as cards
+     -> Generate voices / Generate visuals (fill _pcm / _img per beat) -> exports.
+   - Adding a provider = write one async function that returns the right shape
+     (PCM {pcm,rate} for voices via decodeToPCM24, or a data: URL for images), add it
+     to the dispatch ternary, add a dropdown <option>, and add its config key to
+     `cfgKeys` so it persists. That's the whole pattern.
+   - Errors are shown to the user inline (status line / beat slot) and are written to
+     be human-readable with clickable links; transient TTS errors trigger backoff.
+---------------------------------------------------------------------------- */
 const $ = id => document.getElementById(id);
 const API = "https://generativelanguage.googleapis.com/v1beta/models/";
 
@@ -305,7 +437,7 @@ REES: You notice more when you write it down.
 ON SCREEN: Note. This contradicts the budget you approved on Tuesday.`;
 
 // ---------- config persistence (local only) ----------
-const cfgKeys = ["key","mText","mTts","mImg","ttsProvider","custUrl","custModel","custVoice","custKey","elevenKey","elevenModel"];
+const cfgKeys = ["key","mText","mTts","mImg","ttsProvider","custUrl","custModel","custVoice","custKey","elevenKey","elevenModel","vidMotion","imgProvider","pollModel","pollKey","puterImgModel","custImgUrl","custImgModel","custImgKey"];
 cfgKeys.forEach(k=>{
   const el=$(k), v=localStorage.getItem("s2s_"+k);
   if(v===null) return;
@@ -330,6 +462,18 @@ function syncTtsModelVis(){
 $("ttsProvider").addEventListener("change", syncTtsModelVis);
 syncTtsModelVis();
 
+// show the right per-image-provider fields
+function syncImgProviderVis(){
+  const p=$("imgProvider").value;
+  $("mImgField").classList.toggle("hidden", p!=="gemini");
+  $("pollImgField").classList.toggle("hidden", p!=="pollinations");
+  $("pollKeyField").classList.toggle("hidden", p!=="pollinations");
+  $("puterImgField").classList.toggle("hidden", p!=="puter");
+  $("customImgField").classList.toggle("hidden", p!=="custom-img");
+}
+$("imgProvider").addEventListener("change", syncImgProviderVis);
+syncImgProviderVis();
+
 if(!$("script").value) $("script").value = SAMPLE;
 
 // ---------- page-open counter (free, no signup; count is public) ----------
@@ -349,6 +493,7 @@ if(!$("script").value) $("script").value = SAMPLE;
 // ---------- helpers ----------
 function getKey(){ const k=$("key").value.trim(); if(!k){ $("key").focus(); throw new Error("Add your Gemini API key at the top first."); } return k; }
 
+// ---------- core Gemini call: POSTs to generateContent with the user's key; throws a readable error ----------
 async function gemini(model, body){
   const res = await fetch(API+encodeURIComponent(model)+":generateContent?key="+encodeURIComponent(getKey()),{
     method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)
@@ -361,6 +506,60 @@ async function gemini(model, body){
 }
 
 function b64ToBytes(b64){ const bin=atob(b64); const a=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)a[i]=bin.charCodeAt(i); return a; }
+
+// ---------- image generation (multiple providers; all return a data: URL) ----------
+const IMG_PREFIX="Cinematic film still, atmospheric, no text or words in image. ";
+function blobToDataURL(blob){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(new Error("couldn't read image")); r.readAsDataURL(blob); }); }
+async function genImageGemini(prompt){
+  const data=await gemini($("mImg").value.trim(),{
+    contents:[{parts:[{text:IMG_PREFIX+prompt}]}],
+    generationConfig:{ responseModalities:["IMAGE","TEXT"] }
+  });
+  const part=data.candidates?.[0]?.content?.parts?.find(p=>p.inlineData);
+  if(!part) throw new Error("no image returned");
+  return "data:"+(part.inlineData.mimeType||"image/png")+";base64,"+part.inlineData.data;
+}
+async function genImagePollinations(prompt){
+  const model=($("pollModel").value||"flux"), key=($("pollKey").value||"").trim();
+  let url="https://image.pollinations.ai/prompt/"+encodeURIComponent(IMG_PREFIX+prompt)
+        +"?width=1280&height=720&nologo=true&model="+encodeURIComponent(model)+"&seed="+Math.floor(Math.random()*1e6);
+  if(key) url+="&key="+encodeURIComponent(key);
+  const r=await fetch(url);
+  if(!r.ok) throw new Error("Pollinations "+r.status+": "+(await r.text()).slice(0,200));
+  const blob=await r.blob();
+  if(!/^image\//.test(blob.type)) throw new Error("Pollinations didn't return an image — it may be busy/rate-limited. Try again, or add a free key in Settings.");
+  return await blobToDataURL(blob);
+}
+async function genImagePuter(prompt){
+  if(!(window.puter&&puter.ai&&puter.ai.txt2img)) throw new Error("Puter isn't loaded — check your connection and try again.");
+  const model=$("puterImgModel").value||"gemini-2.5-flash-image-preview";
+  const im=await puter.ai.txt2img(IMG_PREFIX+prompt, { model });
+  const src=(im&&im.src)||"";
+  if(!src) throw new Error("Puter returned no image");
+  if(src.indexOf("data:")===0) return src;
+  return await blobToDataURL(await (await fetch(src)).blob());   // resolve URL to data URL so video/storyboard embed it
+}
+async function genImageCustom(prompt){
+  const base=($("custImgUrl").value||"").trim().replace(/\/+$/,"");
+  if(!base) throw new Error("Enter your image endpoint URL in Settings ⚙");
+  const model=($("custImgModel").value||"").trim(), key=($("custImgKey").value||"").trim();
+  const r=await fetch(base+"/v1/images/generations",{
+    method:"POST", headers:Object.assign({"Content-Type":"application/json"}, key?{Authorization:"Bearer "+key}:{}),
+    body:JSON.stringify(Object.assign({ prompt:IMG_PREFIX+prompt, n:1, size:"1280x720", response_format:"b64_json" }, model?{model}:{}))
+  });
+  if(!r.ok) throw new Error("Image API "+r.status+": "+(await r.text()).slice(0,200));
+  const j=await r.json(), d=j.data&&j.data[0];
+  if(d&&d.b64_json) return "data:image/png;base64,"+d.b64_json;
+  if(d&&d.url) return await blobToDataURL(await (await fetch(d.url)).blob());
+  throw new Error("Image API returned no image data");
+}
+async function genImage(prompt){
+  const p=$("imgProvider").value;
+  return p==="pollinations" ? genImagePollinations(prompt)
+       : p==="puter"        ? genImagePuter(prompt)
+       : p==="custom-img"   ? genImageCustom(prompt)
+       :                      genImageGemini(prompt);
+}
 
 function wavBytes(pcm, rate){
   const ch=1,bps=16,blockAlign=ch*bps/8,byteRate=rate*blockAlign,size=pcm.length;
@@ -390,6 +589,9 @@ function pcmToMp3Bytes(Mp3, pcm, rate){
 let project = null;       // {title, voiceCast, beats}
 let pcmRate = 24000;
 
+// ---------- STEP 2: analyze — Gemini reads the raw script and returns the structured `project` JSON ----------
+// Asks for responseMimeType JSON so we can parse speakers, voice casting, and beats directly.
+// On success it builds `project` and renders one card per beat; later steps fill in audio/images.
 $("analyzeBtn").onclick = async ()=>{
   const btn=$("analyzeBtn"), st=$("analyzeStatus");
   const script=$("script").value.trim();
@@ -471,6 +673,10 @@ function escapeHtml(s){return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&l
 function linkify(s){return (s||"").replace(/https?:\/\/[^\s"<]+/g, u=>`<a href="${u}" target="_blank" rel="noopener">${u}</a>`);}  // make URLs in errors clickable
 
 // ---------- STEP 3a: voices ----------
+// Loops over spoken beats missing `_pcm` (RESUMABLE — finished lines are skipped) and
+// calls the selected TTS provider. Transient errors (rate limit/overload) back off and
+// retry; a daily-cap error stops cleanly; any other error stops and shows the real message.
+// When a run ends incomplete, the "Try next TTS" button offers to switch provider and refill.
 let cancelGen=false;
 $("stopBtn").onclick = ()=>{ cancelGen=true; try{speechSynthesis.cancel();}catch(_){} $("genStatus").textContent="Stopping…"; };
 
@@ -577,6 +783,12 @@ $("nextTtsBtn").onclick = ()=>{
   $("voicesBtn").click();   // resumes — only the missing lines, now with the new provider
 };
 
+// ======================= TTS PROVIDERS =======================
+// Each provider is one async function. Gemini's tts() returns {pcm, rate} directly;
+// every other provider gets some encoded audio (MP3/WebM/etc.) and runs it through
+// decodeToPCM24() so the rest of the app only ever deals with 24kHz mono Int16 PCM.
+// To add a provider: write the function, add it to the dispatch in the voices loop,
+// add a dropdown <option>, and (if it has settings) add its keys to cfgKeys.
 async function tts(model, voice, text){
   const body={ contents:[{parts:[{text}]}],
     generationConfig:{ responseModalities:["AUDIO"],
@@ -817,6 +1029,12 @@ $("exportBtn").onclick = async ()=>{
   st.textContent = Mp3 ? "Storyboard exported (MP3 audio — small file)." : "Storyboard exported (WAV audio — encoder unavailable, larger file).";
 };
 
+// ---------- video render ----------
+// Builds a timeline of segments (title card, a held frame per visual beat, the audio per
+// spoken beat), then records the canvas + audio in REAL TIME via MediaRecorder -> WebM.
+// drawAt()/drawSeg() apply the Ken Burns zoom/pan and crossfade (pure canvas, no API).
+// The render loop and audio scheduling share one clock (actx.currentTime) so motion stays
+// in sync with the voices. Output is WebM; some sites need it re-wrapped to MP4 elsewhere.
 $("videoBtn").onclick = async ()=>{
   if(!project) return;
   if(!project.beats.some(b=>(b.type==="line"||b.type==="onscreen")&&b._pcm)){
@@ -848,10 +1066,39 @@ $("videoBtn").onclick = async ()=>{
   }
   for(const s of segs) if(s.img) await loadImg(s.img);
 
-  function draw(s){
-    cx.fillStyle="#0b0e16"; cx.fillRect(0,0,W,H);
-    if(s.img&&imgs[s.img]){ const im=imgs[s.img]; const r=Math.min(W/im.width,H/im.height),w=im.width*r,h=im.height*r; cx.drawImage(im,(W-w)/2,(H-h)/2,w,h); }
+  // ----- Motion (Ken Burns zoom/pan + crossfade) — pure canvas, no API/credits -----
+  const motion = ($("vidMotion") && $("vidMotion").value) || "kenburns";
+  const doKB = motion==="kenburns";
+  const XF   = motion==="none" ? 0 : 0.5;                  // crossfade seconds
+  let acc=0;
+  segs.forEach((s,i)=>{
+    s.start=acc; s.end=acc+s.dur; s.idx=i; acc+=s.dur;
+    s.kb = doKB ? { z0:(i%2?1.08:1.0), z1:(i%2?1.0:1.08), px:(i%4<2?1:-1), py:(i%3===0?1:-1) } : null;
+  });
+  const total=acc;
+
+  function drawSeg(s, now, alpha){
+    cx.globalAlpha = alpha;
+    if(s.img && imgs[s.img]){
+      const im=imgs[s.img];
+      const p = Math.max(0, Math.min(1,(now - s.start)/Math.max(0.001,s.dur)));
+      const base = s.kb ? Math.max(W/im.width,H/im.height) : Math.min(W/im.width,H/im.height); // cover for KB, contain otherwise
+      const z = s.kb ? (s.kb.z0 + (s.kb.z1-s.kb.z0)*p) : 1;
+      const w=im.width*base*z, h=im.height*base*z;
+      let ox=0, oy=0;
+      if(s.kb){ const mx=Math.max(0,(w-W)/2), my=Math.max(0,(h-H)/2); ox=s.kb.px*mx*(p-0.5)*0.6; oy=s.kb.py*my*(p-0.5)*0.6; }
+      cx.drawImage(im,(W-w)/2+ox,(H-h)/2+oy,w,h);
+    }
     if(s.title){ cx.fillStyle="#e7e9f2"; cx.textAlign="center"; cx.font="600 54px system-ui,-apple-system,sans-serif"; cx.fillText(s.title,W/2,H/2); }
+    cx.globalAlpha = 1;
+  }
+  function drawAt(now){
+    cx.fillStyle="#0b0e16"; cx.fillRect(0,0,W,H);
+    let s=segs[0];
+    for(const g of segs){ if(now>=g.start && now<g.end){ s=g; break; } if(now>=g.end) s=g; }
+    drawSeg(s, now, 1);
+    const next=segs[s.idx+1], left=s.end-now;     // crossfade into the next shot
+    if(XF>0 && next && left<XF){ drawSeg(next, next.start, 1-(left/XF)); }
   }
 
   const vstream=canvas.captureStream(FPS);
@@ -864,18 +1111,12 @@ $("videoBtn").onclick = async ()=>{
   const chunks=[]; rec.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); };
   const done=new Promise(r=>rec.onstop=r);
 
-  let current=segs[0], running=true;
-  (function loop(){ draw(current); if(running) requestAnimationFrame(loop); })();
-
+  let running=true;
   await actx.resume();
   rec.start();
-  const t0=actx.currentTime+0.2; let t=t0; const total=segs.reduce((n,s)=>n+s.dur,0);
-  segs.forEach(s=>{
-    const at=t;
-    setTimeout(()=>{ current=s; }, Math.max(0,(at-t0)*1000));
-    if(s.audio){ const src=actx.createBufferSource(); src.buffer=s.audio; src.connect(gain); src.start(at); }
-    t+=s.dur;
-  });
+  const t0=actx.currentTime+0.2;
+  (function loop(){ drawAt(Math.max(0, actx.currentTime - t0)); if(running) requestAnimationFrame(loop); })();
+  segs.forEach(s=>{ if(s.audio){ const src=actx.createBufferSource(); src.buffer=s.audio; src.connect(gain); src.start(t0+s.start); } });
   st.innerHTML='<span class="spin"></span>Recording in real time — '+Math.ceil(total)+'s. Keep this tab open…';
   setTimeout(()=>{ running=false; rec.stop(); }, total*1000+500);
   await done;
@@ -899,16 +1140,11 @@ $("imagesBtn").onclick = async ()=>{
     const b=visuals[i];
     st.innerHTML=`<span class="spin"></span>Drawing ${i+1} of ${visuals.length}${already?` (${already} already done)`:""}…`;
     try{
-      const data=await gemini($("mImg").value.trim(),{
-        contents:[{parts:[{text:"Cinematic film still, atmospheric, no text or words in image. "+(b.prompt||"")}]}],
-        generationConfig:{ responseModalities:["IMAGE","TEXT"] }
-      });
-      const part=data.candidates?.[0]?.content?.parts?.find(p=>p.inlineData);
+      const url=await genImage(b.prompt||"");
       const slot=$(b._id).querySelector(".slot"); slot.innerHTML="";
-      if(part){ b._img="data:"+(part.inlineData.mimeType||"image/png")+";base64,"+part.inlineData.data; const img=document.createElement("img"); img.src=b._img; slot.appendChild(img); }
-      else slot.innerHTML='<div class="style">no image returned</div>';
+      b._img=url; const img=document.createElement("img"); img.src=url; slot.appendChild(img);
     }catch(e){
-      $(b._id).querySelector(".slot").innerHTML=`<div class="style">image failed: ${escapeHtml(e.message)} — click Generate visuals again to retry just this one.</div>`;
+      $(b._id).querySelector(".slot").innerHTML=`<div class="style">image failed: ${escapeHtml(e.message)} — click Generate visuals again to retry just this one, or switch image provider in <a href="#" onclick="openSettings();return false;">Settings ⚙</a>.</div>`;
     }
     if(cancelGen) break;
     await new Promise(r=>setTimeout(r,800)); // gentle on the rate limit
