@@ -148,6 +148,7 @@
       <button id="imagesBtn" class="primary">Generate visuals</button>
       <button id="downloadBtn" class="ghost" disabled>Download WAV (lossless)</button>
       <button id="downloadMp3Btn" class="ghost" disabled>Download MP3 (small)</button>
+      <button id="exportBtn" class="ghost" disabled>Export storyboard (HTML)</button>
     </div>
     <div id="genStatus" class="status"></div>
   </div>
@@ -207,15 +208,17 @@ async function gemini(model, body){
 
 function b64ToBytes(b64){ const bin=atob(b64); const a=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)a[i]=bin.charCodeAt(i); return a; }
 
-function wavBlob(pcm, rate){
+function wavBytes(pcm, rate){
   const ch=1,bps=16,blockAlign=ch*bps/8,byteRate=rate*blockAlign,size=pcm.length;
   const buf=new ArrayBuffer(44+size),v=new DataView(buf);let p=0;
   const str=s=>{for(let i=0;i<s.length;i++)v.setUint8(p++,s.charCodeAt(i))};
   const u32=n=>{v.setUint32(p,n,true);p+=4}, u16=n=>{v.setUint16(p,n,true);p+=2};
   str("RIFF");u32(36+size);str("WAVE");str("fmt ");u32(16);u16(1);u16(ch);u32(rate);u32(byteRate);u16(blockAlign);u16(bps);str("data");u32(size);
   new Uint8Array(buf,44).set(pcm);
-  return new Blob([buf],{type:"audio/wav"});
+  return new Uint8Array(buf);
 }
+function wavBlob(pcm, rate){ return new Blob([wavBytes(pcm,rate)],{type:"audio/wav"}); }
+function bytesToB64(bytes){ let bin="",ch=0x8000; for(let i=0;i<bytes.length;i+=ch) bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+ch)); return btoa(bin); }
 
 // ---------- STEP 1: analyze ----------
 let project = null;       // {title, voiceCast, beats}
@@ -274,6 +277,7 @@ function renderBreakdown(){
   });
   cast.querySelectorAll("select").forEach(s=> s.onchange=()=> project.voiceCast[s.dataset.sp]=s.value);
   renderBeats();
+  $("exportBtn").disabled=false;
   $("breakdownCard").classList.remove("hidden");
   $("storyCard").classList.remove("hidden");
 }
@@ -373,6 +377,47 @@ $("downloadMp3Btn").onclick = async ()=>{
   }
 };
 
+$("exportBtn").onclick = ()=>{
+  if(!project) return;
+  const st=$("genStatus"); st.innerHTML='<span class="spin"></span>Building storyboard…';
+  const esc = s => (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  let body="";
+  project.beats.forEach(b=>{
+    if(b.type==="visual"){
+      body += `<section class="v">`;
+      if(b._img) body += `<img src="${b._img}" alt="">`;
+      if(b.caption) body += `<div class="cap">${esc(b.caption)}</div>`;
+      if(b.prompt) body += `<p class="prompt">${esc(b.prompt)}</p>`;
+      body += `</section>`;
+    } else {
+      const who = b.type==="onscreen" ? "ON SCREEN" : (b.speaker||"LINE");
+      body += `<section class="l ${b.type}"><div class="who">${esc(who)}</div><p>${esc(b.text||"")}</p>`;
+      if(b._pcm) body += `<audio controls src="data:audio/wav;base64,${bytesToB64(wavBytes(b._pcm,pcmRate))}"></audio>`;
+      body += `</section>`;
+    }
+  });
+  const title = esc(project.title||"Storyboard");
+  const doc = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>
+<style>
+ body{margin:0;background:#0b0e16;color:#e7e9f2;font-family:system-ui,-apple-system,sans-serif;line-height:1.55}
+ .wrap{max-width:820px;margin:0 auto;padding:28px 18px 70px}
+ h1{font-size:30px;margin:0 0 6px;letter-spacing:-.02em}
+ .sub{color:#9aa3bf;margin:0 0 24px;font-size:13px}
+ section{border:1px solid #2a3146;border-radius:12px;padding:16px;margin:14px 0;background:#161b2c}
+ section.v{background:#10131c}
+ img{width:100%;border-radius:8px;display:block}
+ .cap{font-family:ui-monospace,monospace;color:#5fb98a;font-size:12px;margin-top:8px}
+ .prompt{color:#9aa3bf;font-size:13px;margin:8px 0 0}
+ .who{font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.12em;color:#e9a13b;margin-bottom:6px}
+ section.onscreen .who{color:#9aa3bf}
+ p{margin:0} audio{width:100%;margin-top:10px}
+</style></head>
+<body><div class="wrap"><h1>${title}</h1><p class="sub">Storyboard — images, lines, and audio in one self-contained file.</p>${body}</div></body></html>`;
+  const url=URL.createObjectURL(new Blob([doc],{type:"text/html"}));
+  const a=document.createElement("a"); a.href=url; a.download=(project.title||"storyboard")+".html"; a.click();
+  st.textContent="Storyboard exported — open the .html file in any browser.";
+};
+
 // ---------- STEP 3b: visuals ----------
 $("imagesBtn").onclick = async ()=>{
   if(!project) return;
@@ -389,7 +434,7 @@ $("imagesBtn").onclick = async ()=>{
       });
       const part=data.candidates?.[0]?.content?.parts?.find(p=>p.inlineData);
       const slot=$(b._id).querySelector(".slot"); slot.innerHTML="";
-      if(part){ const img=document.createElement("img"); img.src="data:"+(part.inlineData.mimeType||"image/png")+";base64,"+part.inlineData.data; slot.appendChild(img); }
+      if(part){ b._img="data:"+(part.inlineData.mimeType||"image/png")+";base64,"+part.inlineData.data; const img=document.createElement("img"); img.src=b._img; slot.appendChild(img); }
       else slot.innerHTML='<div class="style">no image returned</div>';
     }catch(e){
       $(b._id).querySelector(".slot").innerHTML=`<div class="style">image failed: ${escapeHtml(e.message)}</div>`;
