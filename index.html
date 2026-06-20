@@ -594,6 +594,8 @@ let pcmRate = 24000;
 // ---------- STEP 2: analyze — Gemini reads the raw script and returns the structured `project` JSON ----------
 // Asks for responseMimeType JSON so we can parse speakers, voice casting, and beats directly.
 // On success it builds `project` and renders one card per beat; later steps fill in audio/images.
+// reads "Please retry in 38.1s" out of a Gemini error so we can wait the right amount
+function retrySecs(msg){ const m=/retry in ([\d.]+)\s*s/i.exec(msg||""); return m?Math.ceil(parseFloat(m[1])):0; }
 $("analyzeBtn").onclick = async ()=>{
   const btn=$("analyzeBtn"), st=$("analyzeStatus");
   const script=$("script").value.trim();
@@ -621,18 +623,41 @@ Rules:
 SCRIPT:
 ${script}`;
   try{
-    const data = await gemini($("mText").value.trim(), {
-      contents:[{parts:[{text:prompt}]}],
-      generationConfig:{ responseMimeType:"application/json", temperature:0.4 }
-    });
+    let data=null, lastErr="";
+    for(let attempt=0; attempt<4; attempt++){          // auto-retry a short rate limit instead of failing
+      try{
+        data = await gemini($("mText").value.trim(), {
+          contents:[{parts:[{text:prompt}]}],
+          generationConfig:{ responseMimeType:"application/json", temperature:0.4 }
+        });
+        break;
+      }catch(e){
+        lastErr = e.message||String(e);
+        if(/per day|daily/i.test(lastErr)){
+          st.innerHTML = "Daily Gemini limit reached on this key. Try the <strong>Script Analyzer</strong> model in <a href=\"#\" onclick=\"openSettings();return false;\">Settings ⚙</a>, or come back after midnight Pacific. (Analyze only needs one request, so this usually means the day's free requests are used up across analyze + voices + images.)";
+          return;
+        }
+        const transient = /429|rate limit|resource_exhausted|quota|exhaust|overload|temporar|unavailable|try again|timeout|50[0-4]/i.test(lastErr);
+        if(!transient){
+          st.innerHTML = "Analyze failed: "+linkify(escapeHtml(lastErr))+"<br>If it mentions the model name, switch the Script Analyzer model in <a href=\"#\" onclick=\"openSettings();return false;\">Settings ⚙</a>.";
+          return;
+        }
+        if(attempt===3){
+          st.innerHTML = "Still rate-limited after a few tries. Wait a minute, then click <strong>Analyze</strong> again.<br>The free tier allows ~20 Gemini requests/min, and that pool is <em>shared</em> with Generate voices &amp; visuals — so heavy generating can briefly block Analyze.";
+          return;
+        }
+        let wait = retrySecs(lastErr) || Math.min(45, 10*(attempt+1));
+        for(let s=wait; s>0; s--){ st.innerHTML=`<span class="spin"></span>Rate limit — waiting ${s}s, then retrying (try ${attempt+2} of 4)…`; await new Promise(r=>setTimeout(r,1000)); }
+      }
+    }
+    if(!data) return;
     let txt = data.candidates?.[0]?.content?.parts?.map(p=>p.text).join("")||"";
     txt = txt.replace(/^```json\s*|\s*```$/g,"").trim();
-    project = JSON.parse(txt);
+    try{ project = JSON.parse(txt); }
+    catch(pe){ st.textContent="The model's reply wasn't valid JSON — click Analyze again. If it keeps happening, switch the Script Analyzer model to Pro in Settings ⚙."; return; }
     project.beats.forEach((b,i)=> b._id="b"+i);
     renderBreakdown();
     st.textContent="Done — "+project.beats.length+" beats, "+Object.keys(project.voiceCast||{}).length+" voices cast.";
-  }catch(e){
-    st.textContent="Couldn't parse: "+e.message+"\nTip: if it's a model error, check the model name in Setup.";
   }finally{ btn.disabled=false; }
 };
 
