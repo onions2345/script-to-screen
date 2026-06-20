@@ -165,6 +165,7 @@
     <select id="ttsProvider">
       <option value="gemini" selected>Gemini API — your key &amp; quota (your cast voices)</option>
       <option value="google-cloud">Google Cloud TTS — your Google key, separate quota (Neural2)</option>
+      <option value="elevenlabs">ElevenLabs — your own key (top quality, free tier)</option>
       <option value="streamelements">StreamElements — free, no key, no sign-in (Brian &amp; friends)</option>
       <option value="puter-gemini">Puter · Gemini voices — free, no key</option>
       <option value="puter-openai">Puter · OpenAI voices — free, no key</option>
@@ -172,6 +173,7 @@
       <option value="puter-xai">Puter · Grok (xAI), expressive — free, no key</option>
       <option value="puter-eleven">Puter · ElevenLabs (one voice) — free, no key</option>
       <option value="custom">Custom / OpenAI-compatible endpoint — your server, Pollinations, etc.</option>
+      <option value="webspeech">Browser voice (your device) — no key, experimental capture</option>
     </select>
     <div id="ttsModelField">
       <label for="mTts">Google API Voice model (TTS)</label>
@@ -193,7 +195,21 @@
       <input id="custKey" type="password" placeholder="leave blank if your endpoint needs no key" autocomplete="off" />
       <div class="hint">Point this at any OpenAI-compatible TTS server. Examples: <strong>Pollinations</strong> — URL <code>https://gen.pollinations.ai/v1/audio/speech</code>, get a free key at enter.pollinations.ai; a <strong>self-hosted Edge-TTS</strong> (travisvn/openai-edge-tts) at your own URL; or OpenAI's own <code>https://api.openai.com/v1/audio/speech</code> with your key (note: OpenAI may block direct browser calls). One voice for all characters.</div>
     </div>
-    <div class="hint"><strong>Google Cloud TTS</strong> uses the same Google key as Gemini but is a separate service with its own (large, free-tier) quota — the best way around the Gemini 100/day TTS cap. One-time setup on your own Google account: <a href="https://console.cloud.google.com/apis/library/texttospeech.googleapis.com" target="_blank" rel="noopener">enable the Cloud Text-to-Speech API</a> on the same project as your key (free to enable; ~1M characters/month free, billing must be on the project). It auto-assigns a Neural2 voice per character.<br><br>All the <strong>Puter</strong> options are free and need no key (a quick Puter sign-in may pop up on first use) and don't touch your Gemini quota. "Puter · Gemini" keeps your exact cast voices; the others use their own voices, auto-assigned per character (ElevenLabs uses one voice for all). The Google API Voice model dropdown only shows for the Gemini-voice options.</div>
+    <div id="elevenField" class="hidden">
+      <label for="elevenKey">ElevenLabs API key</label>
+      <input id="elevenKey" type="password" placeholder="from elevenlabs.io → Profile → API key" autocomplete="off" />
+      <label for="elevenModel">ElevenLabs model</label>
+      <select id="elevenModel">
+        <option value="eleven_flash_v2_5" selected>eleven_flash_v2_5 — fast, low cost</option>
+        <option value="eleven_multilingual_v2">eleven_multilingual_v2 — higher quality</option>
+        <option value="eleven_v3">eleven_v3 — most expressive</option>
+      </select>
+      <div class="hint">Top-quality voices. <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" rel="noopener">Get a free API key</a> (free tier ~10k characters/month). Voices are auto-assigned per character from ElevenLabs' default set. Your key is stored only in this browser.</div>
+    </div>
+    <div id="webField" class="hidden">
+      <div class="hint"><strong>Experimental.</strong> Uses your device's built-in voices — no key, no quota, no account. To actually save it into downloads/video, the browser has to record this tab's audio: when you click <strong>Generate voices</strong>, a share box appears — choose <strong>This Tab</strong> and tick <strong>Share tab audio</strong>. It plays out loud and records in <em>real time</em>, so it's slow, and it works best in <strong>Chrome</strong> (other browsers may not allow tab-audio capture). If no sound gets captured, you'll get a clear error.</div>
+    </div>
+    <div class="hint"><strong>Google Cloud TTS</strong> uses the same Google key as Gemini but is a separate service with its own (large, free-tier) quota — the best way around the Gemini 100/day TTS cap. One-time setup on your own Google account: <a href="https://console.cloud.google.com/apis/library/texttospeech.googleapis.com" target="_blank" rel="noopener">enable the Cloud Text-to-Speech API</a> on the same project as your key (free to enable; ~1M characters/month free, billing must be on the project). It auto-assigns a Neural2 voice per character.<br><br><strong>ElevenLabs</strong> needs its own free key (separate from Google) and is the highest quality. All the <strong>Puter</strong> options are free and need no key (a quick Puter sign-in may pop up on first use) and don't touch your Gemini quota. "Puter · Gemini" keeps your exact cast voices; the others use their own voices, auto-assigned per character. The Google API Voice model dropdown only shows for the Gemini-voice options.</div>
 
     <h3>Script Analyzer</h3>
     <select id="mText">
@@ -247,6 +263,7 @@
       <button id="voicesBtn" class="amber">Generate voices</button>
       <button id="imagesBtn" class="primary">Generate visuals</button>
       <button id="stopBtn" class="stop hidden">■ Stop</button>
+      <button id="nextTtsBtn" class="amber hidden">↻ Try next TTS</button>
       <button id="downloadBtn" class="ghost" disabled>Download WAV (lossless)</button>
       <button id="downloadMp3Btn" class="ghost" disabled>Download MP3 (small)</button>
       <button id="exportBtn" class="ghost" disabled>Export storyboard (HTML)</button>
@@ -289,7 +306,7 @@ REES: You notice more when you write it down.
 ON SCREEN: Note. This contradicts the budget you approved on Tuesday.`;
 
 // ---------- config persistence (local only) ----------
-const cfgKeys = ["key","mText","mTts","mImg","ttsProvider","custUrl","custModel","custVoice","custKey"];
+const cfgKeys = ["key","mText","mTts","mImg","ttsProvider","custUrl","custModel","custVoice","custKey","elevenKey","elevenModel"];
 cfgKeys.forEach(k=>{
   const el=$(k), v=localStorage.getItem("s2s_"+k);
   if(v===null) return;
@@ -305,8 +322,11 @@ function openSettings(){ $("settingsCard").classList.remove("hidden"); $("settin
 // show the right per-provider fields
 function syncTtsModelVis(){
   const p=$("ttsProvider").value;
+  $("nextTtsBtn").classList.add("hidden");
   $("ttsModelField").classList.toggle("hidden", !(p==="gemini"||p==="puter-gemini"));
   $("customField").classList.toggle("hidden", p!=="custom");
+  $("elevenField").classList.toggle("hidden", p!=="elevenlabs");
+  $("webField").classList.toggle("hidden", p!=="webspeech");
 }
 $("ttsProvider").addEventListener("change", syncTtsModelVis);
 syncTtsModelVis();
@@ -453,7 +473,7 @@ function linkify(s){return (s||"").replace(/https?:\/\/[^\s"<]+/g, u=>`<a href="
 
 // ---------- STEP 3a: voices ----------
 let cancelGen=false;
-$("stopBtn").onclick = ()=>{ cancelGen=true; $("genStatus").textContent="Stopping…"; };
+$("stopBtn").onclick = ()=>{ cancelGen=true; try{speechSynthesis.cancel();}catch(_){} $("genStatus").textContent="Stopping…"; };
 
 $("voicesBtn").onclick = async ()=>{
   if(!project) return;
@@ -461,8 +481,12 @@ $("voicesBtn").onclick = async ()=>{
   const spoken = project.beats.filter(b=>b.type==="line"||b.type==="onscreen");
   const todo = spoken.filter(b=>!b._pcm);              // only what's missing
   if(!todo.length){ st.textContent="All lines already voiced."; $("downloadBtn").disabled=false; $("downloadMp3Btn").disabled=false; $("videoBtn").disabled=false; return; }
-  btn.disabled=true; cancelGen=false; $("stopBtn").classList.remove("hidden");
+  btn.disabled=true; cancelGen=false; $("stopBtn").classList.remove("hidden"); $("nextTtsBtn").classList.add("hidden");
   const provider = $("ttsProvider").value, model = $("mTts").value.trim();
+  if(provider==="webspeech"){           // must request capture within the click gesture, before other awaits
+    try{ st.innerHTML='<span class="spin"></span>Waiting for tab-audio share…'; await webCaptureSetup(); }
+    catch(e){ st.innerHTML=`Browser voice — ${escapeHtml(e.message)}<br>Try again, or pick a different provider in <a href="#" onclick="openSettings();return false;">Settings ⚙</a>.`; $("stopBtn").classList.add("hidden"); btn.disabled=false; return; }
+  }
   const already = spoken.length - todo.length;
   let hitDaily=false, fatalErr="";
   for(let i=0;i<todo.length;i++){
@@ -480,11 +504,15 @@ $("voicesBtn").onclick = async ()=>{
           ? await tts(model, voice, geminiText)
           : provider==="google-cloud"
             ? await googleTTS(b.speaker, onscreen, (b.text||""))
-            : provider==="streamelements"
-              ? await streamTTS(b.speaker, onscreen, (b.text||""))
-              : provider==="custom"
-                ? await customTTS(b.text||"")
-                : await puterTTS(puterOpts(provider, b.speaker, onscreen, styleInstr), (b.text||""));
+            : provider==="elevenlabs"
+              ? await elevenTTS(b.speaker, onscreen, (b.text||""))
+              : provider==="webspeech"
+                ? await webTTS(b.speaker, onscreen, (b.text||""))
+                : provider==="streamelements"
+                  ? await streamTTS(b.speaker, onscreen, (b.text||""))
+                  : provider==="custom"
+                    ? await customTTS(b.text||"")
+                    : await puterTTS(puterOpts(provider, b.speaker, onscreen, styleInstr), (b.text||""));
         b._pcm = audio.pcm; pcmRate = audio.rate;
         const slot = $(b._id).querySelector(".slot");
         slot.innerHTML=""; const a=document.createElement("audio"); a.controls=true;
@@ -506,7 +534,7 @@ $("voicesBtn").onclick = async ()=>{
   if(fatalErr){
     const isCloud=/cloud text-to-speech|texttospeech/i.test(fatalErr);
     const note = isCloud
-      ? `<strong>To fix this:</strong> open the <em>console.developers.google.com…</em> link in the message above <strong>while signed in to the Google account that owns this key</strong> (a logged-out or incognito window can't enable it). On the page that opens, click the blue <strong>Enable</strong> button, wait a minute or two, then come back and click <strong>Generate voices</strong> again.<br><br>The project number in the error is the Google Cloud project that owns the API key you're using — not something this app created. Anyone using their own key enables it on their own project, just once. Note: Cloud Text-to-Speech is only free up to a monthly limit, so keep an eye on your usage.`
+      ? `<strong>To fix this:</strong> open the <em>console.developers.google.com…</em> link in the message above <strong>while signed in to the Google account that owns this key</strong> (a logged-out or incognito window can't enable it). On the page that opens, click the blue <strong>Enable</strong> button, wait a minute or two, then come back and click <strong>Generate voices</strong> again.<br><br>The project number in the error is the Google Cloud project that owns the API key you're using — not something this app created. Anyone using their own key enables it on their own project, just once. Note: Cloud Text-to-Speech is only free up to a monthly limit. To avoid surprise charges, set a small monthly budget in <a href="https://console.cloud.google.com/billing/budgets" target="_blank" rel="noopener">Google Cloud Billing → Budgets</a> (e.g. $1) with email alerts at 50/90/100% — heads up, a budget <em>warns</em> you, it doesn't automatically hard-stop usage on its own.`
       : `This isn't a rate limit — it usually means the provider needs setup, or can't be reached from the browser.`;
     st.innerHTML = `<div>Couldn't generate with this provider:</div>`
       + `<div style="white-space:pre-wrap;margin:6px 0;padding:10px;border:1px solid var(--line);border-radius:8px;font-family:var(--mono);font-size:12px">${linkify(escapeHtml(fatalErr))}</div>`
@@ -517,10 +545,37 @@ $("voicesBtn").onclick = async ()=>{
   else if(hitDaily) st.innerHTML = `Voiced ${done} of ${spoken.length}. Daily limit reached on this model. <strong>Your audio so far is safe.</strong> Try again in a minute, switch the voice model/provider in <a href="#" onclick="openSettings();return false;">Settings ⚙</a>, or come back after midnight Pacific — then Generate voices again.`;
   else st.innerHTML = done===spoken.length ? "Voices done — all "+done+" lines." : `Voiced ${done} of ${spoken.length}. <strong>What's done is saved.</strong> Try again in a minute, or change the voice provider in <a href="#" onclick="openSettings();return false;">Settings ⚙</a>, then click Generate voices to fill the rest.`;
   $("stopBtn").classList.add("hidden");
+  refreshNextTtsBtn(done < spoken.length);
   $("downloadBtn").disabled=false;
   $("downloadMp3Btn").disabled=false;
   $("videoBtn").disabled=false;
   btn.disabled=false;
+};
+
+// ---- "Try next TTS": switch to the next usable provider and re-run (fills only missing lines) ----
+function nextProviderIndex(){
+  const opts=[...$("ttsProvider").options], n=opts.length, i=$("ttsProvider").selectedIndex;
+  for(let step=1; step<=n; step++){
+    const cand=opts[(i+step)%n].value;
+    if(cand==="elevenlabs" && !($("elevenKey").value||"").trim()) continue;   // skip ones that obviously aren't set up
+    if(cand==="custom" && !($("custUrl").value||"").trim()) continue;
+    return (i+step)%n;
+  }
+  return (i+1)%n;
+}
+function refreshNextTtsBtn(incomplete){
+  const b=$("nextTtsBtn");
+  if(!incomplete){ b.classList.add("hidden"); return; }
+  const opts=[...$("ttsProvider").options], idx=nextProviderIndex();
+  b.textContent="↻ Try next TTS — "+opts[idx].textContent.split(" — ")[0].trim();
+  b.classList.remove("hidden");
+}
+$("nextTtsBtn").onclick = ()=>{
+  const sel=$("ttsProvider"); sel.selectedIndex=nextProviderIndex();
+  localStorage.setItem("s2s_ttsProvider", sel.value);
+  syncTtsModelVis();
+  $("nextTtsBtn").classList.add("hidden");
+  $("voicesBtn").click();   // resumes — only the missing lines, now with the new provider
 };
 
 async function tts(model, voice, text){
@@ -620,6 +675,66 @@ async function customTTS(text){
   })});
   if(!res.ok) throw new Error("Custom TTS "+res.status+": "+(await res.text()).slice(0,800));
   return decodeToPCM24(await res.arrayBuffer());
+}
+
+// ElevenLabs — your own key (top quality). Auto-maps characters to default voices.
+const EL_VOICES=["21m00Tcm4TlvDq8ikWAM","pNInz6obpgDQGcFmaJgB","EXAVITQu4vr4xnSDxMaL","ErXwobaYiN019PkySvjV","MF3mGyEYCl7XYWbV9V6O","TxGEqnHWrfWFTfGW9XjX","AZnzlk1XvdvUeBnXmlld","yoZ06aMxZJJ28mfd3POQ"];
+function elVoice(speaker,isOnscreen){
+  if(isOnscreen) return EL_VOICES[1];
+  const sp=Object.keys(project.voiceCast||{}).filter(s=>s!=="ON SCREEN").sort();
+  return EL_VOICES[Math.max(0,sp.indexOf(speaker)) % EL_VOICES.length];
+}
+async function elevenTTS(speaker,isOnscreen,text){
+  const key=($("elevenKey").value||"").trim();
+  if(!key) throw new Error("Enter your ElevenLabs API key in Settings");
+  const vid=elVoice(speaker,isOnscreen), model=($("elevenModel").value||"eleven_flash_v2_5").trim();
+  const res=await fetch("https://api.elevenlabs.io/v1/text-to-speech/"+vid,{
+    method:"POST", headers:{ "xi-api-key":key, "Content-Type":"application/json", "Accept":"audio/mpeg" },
+    body:JSON.stringify({ text, model_id:model })
+  });
+  if(!res.ok) throw new Error("ElevenLabs "+res.status+": "+(await res.text()).slice(0,400));
+  return decodeToPCM24(await res.arrayBuffer());
+}
+
+// Browser voice (experimental): speak with the device voice and capture this tab's audio into PCM.
+let _capStream=null;
+function webVoices(){ return (window.speechSynthesis?speechSynthesis.getVoices():[]).filter(v=>/^en[-_]/i.test(v.lang)); }
+function webVoiceFor(speaker,isOnscreen){
+  const vs=webVoices(); if(!vs.length) return null;
+  if(isOnscreen) return vs[vs.length-1];
+  const sp=Object.keys(project.voiceCast||{}).filter(s=>s!=="ON SCREEN").sort();
+  return vs[Math.max(0,sp.indexOf(speaker)) % vs.length];
+}
+async function webCaptureSetup(){            // call inside the click gesture, before other awaits
+  if(_capStream && _capStream.getAudioTracks().length && _capStream.getAudioTracks()[0].readyState==="live") return;
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getDisplayMedia) throw new Error("This browser can't capture tab audio — try Chrome, or use another provider.");
+  _capStream = await navigator.mediaDevices.getDisplayMedia({ video:true, audio:true, preferCurrentTab:true });
+  if(!_capStream.getAudioTracks().length){ _capStream.getTracks().forEach(t=>t.stop()); _capStream=null; throw new Error("No tab audio was shared — re-run and tick 'Share tab audio' on the 'This Tab' option."); }
+  _capStream.getTracks().forEach(t=> t.addEventListener("ended", ()=>{ _capStream=null; }));
+  // prime the voice list
+  if(!webVoices().length) await new Promise(r=>{ try{speechSynthesis.addEventListener("voiceschanged",r,{once:true});}catch(_){} setTimeout(r,800); });
+}
+async function webTTS(speaker,isOnscreen,text){
+  if(!_capStream || !_capStream.getAudioTracks().length) throw new Error("Tab-audio share was lost — pick this tab and share its audio again.");
+  const v=webVoiceFor(speaker,isOnscreen);
+  const audioStream=new MediaStream([_capStream.getAudioTracks()[0]]);
+  const mime=["audio/webm;codecs=opus","audio/webm","audio/mp4"].find(m=>window.MediaRecorder&&MediaRecorder.isTypeSupported(m))||"";
+  const rec=new MediaRecorder(audioStream, mime?{mimeType:mime}:undefined);
+  const chunks=[]; rec.ondataavailable=e=>{ if(e.data&&e.data.size) chunks.push(e.data); };
+  const stopped=new Promise(r=>rec.onstop=r);
+  rec.start();
+  await new Promise(resolve=>{
+    try{ speechSynthesis.cancel(); }catch(_){}
+    const u=new SpeechSynthesisUtterance(text||" "); if(v) u.voice=v;
+    u.onend=()=>resolve(); u.onerror=()=>resolve();
+    speechSynthesis.speak(u);
+    setTimeout(()=>{ try{speechSynthesis.cancel();}catch(_){} resolve(); }, 25000); // per-line safety cap
+  });
+  await new Promise(r=>setTimeout(r,300));   // catch the tail
+  rec.stop(); await stopped;
+  const blob=new Blob(chunks,{type:mime||"audio/webm"});
+  if(blob.size<800) throw new Error("Captured no audio — make sure 'Share tab audio' is on and this tab isn't muted.");
+  return decodeToPCM24(await blob.arrayBuffer());
 }
 
 $("downloadBtn").onclick = ()=>{
