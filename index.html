@@ -38,6 +38,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<script src="https://js.puter.com/v2/"></script>
 <style>
   :root{
     --ink:#0b0e16;          /* deep navy, the script's "navy" */
@@ -71,6 +72,7 @@
   .lede{color:var(--muted);max-width:62ch;margin:14px 0 0}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px;margin-top:22px}
   .card h2{font-family:var(--display);font-weight:500;font-size:18px;margin:0 0 4px;letter-spacing:-.01em}
+  .card h3{font-family:var(--display);font-weight:500;font-size:14px;margin:22px 0 2px;color:var(--shoot);border-top:1px solid var(--line);padding-top:16px}
   .step{font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:.1em}
   label{display:block;font-size:13px;color:var(--muted);margin:12px 0 6px}
   input[type=text],input[type=password],textarea,select{
@@ -117,7 +119,11 @@
   @keyframes s{to{transform:rotate(360deg)}}
   .hidden{display:none}
   footer{margin-top:40px;color:var(--muted);font-size:12px;text-align:center}
-  .topbar{display:flex;justify-content:flex-end;margin:-6px 0 -2px}
+  .topbar{display:flex;justify-content:space-between;align-items:center;margin:-6px 0 2px}
+  .gear{background:transparent;border:1px solid var(--line);color:var(--text);width:46px;height:46px;border-radius:12px;font-size:24px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0;cursor:pointer}
+  .gear:hover{border-color:var(--shoot);filter:brightness(1.1)}
+  .stop{background:transparent;border:1px solid var(--red);color:var(--red)}
+  .stop:hover{filter:brightness(1.1)}
   .hits{font-family:var(--mono);color:var(--muted);font-size:11px;opacity:.65;letter-spacing:.04em}
   a{color:var(--shoot)}
   @media (prefers-reduced-motion: reduce){.spin{animation:none}}
@@ -125,37 +131,82 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="topbar"><span id="hits" class="hits"></span></div>
+  <div class="topbar"><span id="hits" class="hits"></span><button id="gearBtn" class="gear" title="Settings — API key &amp; models" aria-label="Settings">⚙</button></div>
   <header class="top">
     <h1>Script <span class="b">to</span> Screen</h1>
     <p class="eyebrow">Turn ANY Script / Screenplay into a movie FREE</p>
     <p class="lede">Paste a script. Gemini works out who speaks each line and casts a voice, reads it aloud, and sketches the visual beats — then stitches the voices into one audio track and makes your video. Runs entirely in your browser.</p>
   </header>
 
-  <!-- SETTINGS -->
-  <div class="card">
-    <details class="settings" open>
-      <summary>Setup &amp; keys</summary>
-      <label for="key">Gemini API key</label>
-      <input id="key" type="password" placeholder="Paste your key from aistudio.google.com/apikey" autocomplete="off" />
-      <div class="hint">No key yet? <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Get a free one from Google AI Studio</a> — sign in with Google, click "Create API key," paste it here. Each visitor uses their own key; keys can't be handed out by a login button.</div>
-      <div class="warn"><strong>Your key stays in this browser only</strong> (saved to localStorage on this device). Never commit it to the repo — GitHub Pages is public. For safety, restrict the key to your Pages URL in Google Cloud Console → Credentials → HTTP referrers.</div>
-      <div class="row">
-        <div>
-          <label for="mText">Text model (parsing)</label>
-          <input id="mText" type="text" value="gemini-2.5-flash" />
-        </div>
-        <div>
-          <label for="mTts">Voice model (TTS)</label>
-          <input id="mTts" type="text" value="gemini-2.5-flash-preview-tts" />
-        </div>
-        <div>
-          <label for="mImg">Image model</label>
-          <input id="mImg" type="text" value="gemini-2.5-flash-image" />
-        </div>
+  <!-- API KEY (always visible) -->
+  <div class="card" id="keyCard">
+    <label for="key">Gemini API key</label>
+    <input id="key" type="password" placeholder="Paste your key from aistudio.google.com/apikey" autocomplete="off" />
+    <div class="hint">No key yet? <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Get a free one from Google AI Studio</a> — sign in with Google, click "Create API key," paste it here. Each visitor uses their own key; keys can't be handed out by a login button.</div>
+    <div class="warn"><strong>Your key stays in this browser only</strong> (saved to localStorage on this device). Never commit it to the repo — GitHub Pages is public. For safety, restrict the key to your Pages URL in Google Cloud Console → Credentials → HTTP referrers.</div>
+  </div>
+
+  <!-- SETTINGS MENU (toggled by the gear) -->
+  <div class="card hidden" id="settingsCard">
+    <h2>Settings</h2>
+
+    <h3>Saved projects</h3>
+    <select id="savedList"><option value="">— none saved yet —</option></select>
+    <div class="btnrow">
+      <button id="openBtn" class="ghost">Open selected</button>
+      <button id="saveBtn" class="amber">Save current</button>
+      <button id="newBtn" class="ghost">New project</button>
+      <button id="delBtn" class="ghost">Delete selected</button>
+    </div>
+    <div class="hint">Saved on <strong>this device, in this browser</strong> — your script, voices and images are kept so you can close the tab and come back. Clearing browser data (or using another device) removes them. <span id="projMsg" style="color:var(--shoot)"></span></div>
+
+    <h3>Audio generation</h3>
+    <label for="ttsProvider">Voice provider</label>
+    <select id="ttsProvider">
+      <option value="gemini" selected>Gemini API — uses your key &amp; daily quota</option>
+      <option value="puter">Puter.js — free, no key (covers it via user-pays)</option>
+    </select>
+    <div class="row">
+      <div>
+        <label for="mText">Text model (parsing)</label>
+        <select id="mText">
+          <option value="gemini-2.5-flash" selected>gemini-2.5-flash — fast, recommended</option>
+          <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite — biggest quota</option>
+          <option value="gemini-2.5-pro">gemini-2.5-pro — best reasoning</option>
+          <option value="gemini-3-flash">gemini-3-flash — newest</option>
+        </select>
       </div>
-      <div class="hint">Model names change. If one 404s, try newer IDs: TTS <code>gemini-3.1-flash-tts-preview</code>, image <code>gemini-3.1-flash-image-preview</code>, text <code>gemini-3-flash</code>. The free tier is generous but rate-limited (~10 image calls/min).</div>
-    </details>
+      <div>
+        <label for="mTts">Voice model (TTS)</label>
+        <select id="mTts">
+          <option value="gemini-2.5-flash-tts" selected>gemini-2.5-flash-tts — low latency (default)</option>
+          <option value="gemini-2.5-pro-tts">gemini-2.5-pro-tts — highest quality</option>
+          <option value="gemini-2.5-flash-lite-preview-tts">gemini-2.5-flash-lite-preview-tts — extra quota</option>
+          <option value="gemini-3.1-flash-tts-preview">gemini-3.1-flash-tts-preview — newest</option>
+        </select>
+      </div>
+    </div>
+    <div class="hint">Use <strong>Puter.js</strong> to keep going when your Gemini key hits its daily TTS cap — same voices, no key, no quota on your side (first use may pop a quick Puter sign-in). Each model has its own separate daily quota, so switching is the fastest way around a limit.</div>
+
+    <h3>Video &amp; image generation</h3>
+    <div class="row">
+      <div>
+        <label for="mImg">Image model</label>
+        <select id="mImg">
+          <option value="gemini-2.5-flash-image" selected>gemini-2.5-flash-image — default</option>
+          <option value="gemini-3-pro-image-preview">gemini-3-pro-image-preview — newest (Nano Banana)</option>
+          <option value="gemini-3.1-flash-image-preview">gemini-3.1-flash-image-preview</option>
+        </select>
+      </div>
+      <div>
+        <label for="vidRes">Video resolution</label>
+        <select id="vidRes">
+          <option value="1280x720" selected>720p (1280×720) — sharper</option>
+          <option value="960x540">540p (960×540) — smaller file</option>
+        </select>
+      </div>
+    </div>
+    <div class="hint">The image model draws the visuals used in the storyboard and video. Lower resolution makes the rendered video smaller.</div>
   </div>
 
   <!-- STEP 1: SCRIPT -->
@@ -179,6 +230,7 @@
     <div class="btnrow">
       <button id="voicesBtn" class="amber">Generate voices</button>
       <button id="imagesBtn" class="primary">Generate visuals</button>
+      <button id="stopBtn" class="stop hidden">■ Stop</button>
       <button id="downloadBtn" class="ghost" disabled>Download WAV (lossless)</button>
       <button id="downloadMp3Btn" class="ghost" disabled>Download MP3 (small)</button>
       <button id="exportBtn" class="ghost" disabled>Export storyboard (HTML)</button>
@@ -221,9 +273,17 @@ REES: You notice more when you write it down.
 ON SCREEN: Note. This contradicts the budget you approved on Tuesday.`;
 
 // ---------- config persistence (local only) ----------
-const cfgKeys = ["key","mText","mTts","mImg"];
-cfgKeys.forEach(k=>{ const v=localStorage.getItem("s2s_"+k); if(v!==null) $(k).value=v; });
-cfgKeys.forEach(k=> $(k).addEventListener("input",()=>localStorage.setItem("s2s_"+k,$(k).value)));
+const cfgKeys = ["key","mText","mTts","mImg","ttsProvider"];
+cfgKeys.forEach(k=>{
+  const el=$(k), v=localStorage.getItem("s2s_"+k);
+  if(v===null) return;
+  if(el.tagName==="SELECT"){ if([...el.options].some(o=>o.value===v)) el.value=v; }  // keep default if saved model isn't in the list
+  else el.value=v;
+});
+cfgKeys.forEach(k=> ["input","change"].forEach(ev=> $(k).addEventListener(ev,()=>localStorage.setItem("s2s_"+k,$(k).value))));
+
+// gear toggles the settings panel; auto-open it for first-time users with no key yet
+$("gearBtn").onclick = ()=> $("settingsCard").classList.toggle("hidden");
 
 if(!$("script").value) $("script").value = SAMPLE;
 
@@ -242,7 +302,7 @@ if(!$("script").value) $("script").value = SAMPLE;
 })();
 
 // ---------- helpers ----------
-function getKey(){ const k=$("key").value.trim(); if(!k) throw new Error("Add your Gemini API key in Setup first."); return k; }
+function getKey(){ const k=$("key").value.trim(); if(!k){ $("key").focus(); throw new Error("Add your Gemini API key at the top first."); } return k; }
 
 async function gemini(model, body){
   const res = await fetch(API+encodeURIComponent(model)+":generateContent?key="+encodeURIComponent(getKey()),{
@@ -365,33 +425,53 @@ function renderBeats(){
 function escapeHtml(s){return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 
 // ---------- STEP 3a: voices ----------
+let cancelGen=false;
+$("stopBtn").onclick = ()=>{ cancelGen=true; $("genStatus").textContent="Stopping…"; };
+
 $("voicesBtn").onclick = async ()=>{
   if(!project) return;
   const btn=$("voicesBtn"), st=$("genStatus");
   const spoken = project.beats.filter(b=>b.type==="line"||b.type==="onscreen");
   const todo = spoken.filter(b=>!b._pcm);              // only what's missing
   if(!todo.length){ st.textContent="All lines already voiced."; $("downloadBtn").disabled=false; $("downloadMp3Btn").disabled=false; $("videoBtn").disabled=false; return; }
-  btn.disabled=true;
+  btn.disabled=true; cancelGen=false; $("stopBtn").classList.remove("hidden");
+  const provider = $("ttsProvider").value, model = $("mTts").value.trim();
   const already = spoken.length - todo.length;
+  let hitDaily=false;
   for(let i=0;i<todo.length;i++){
+    if(cancelGen) break;
     const b=todo[i];
-    st.innerHTML=`<span class="spin"></span>Voicing ${i+1} of ${todo.length}${already?` (${already} already done)`:""}…`;
-    try{
-      const voice = b.type==="onscreen" ? (project.voiceCast["ON SCREEN"]||"Iapetus") : (project.voiceCast[b.speaker]||"Charon");
-      const instruct = b.type==="onscreen"
-        ? "Read in a flat, cold, robotic computer-readout voice, slightly slow: "
-        : "Say in a "+(b.style||"natural, cinematic")+" tone: ";
-      const audio = await tts($("mTts").value.trim(), voice, instruct + (b.text||""));
-      b._pcm = audio.pcm; pcmRate = audio.rate;
-      const slot = $(b._id).querySelector(".slot");
-      slot.innerHTML=""; const a=document.createElement("audio"); a.controls=true;
-      a.src=URL.createObjectURL(wavBlob(audio.pcm,audio.rate)); slot.appendChild(a);
-    }catch(e){
-      $(b._id).querySelector(".slot").innerHTML=`<div class="style">voice failed: ${escapeHtml(e.message)} — click Generate voices again to retry just this one.</div>`;
+    const voice = b.type==="onscreen" ? (project.voiceCast["ON SCREEN"]||"Iapetus") : (project.voiceCast[b.speaker]||"Charon");
+    const style = b.type==="onscreen" ? "flat, cold, robotic computer-readout voice, slightly slow" : (b.style||"natural, cinematic");
+    const instruct = b.type==="onscreen" ? "Read in a flat, cold, robotic computer-readout voice, slightly slow: " : "Say in a "+style+" tone: ";
+    let delay=4000, ok=false, lastErr="";
+    for(let attempt=0;attempt<6 && !ok && !cancelGen;attempt++){
+      st.innerHTML=`<span class="spin"></span>Voicing ${i+1} of ${todo.length}${already?` (${already} already done)`:""}…`;
+      try{
+        const audio = provider==="puter"
+          ? await puterTTS(model, voice, instruct, (b.text||""))
+          : await tts(model, voice, instruct + (b.text||""));
+        b._pcm = audio.pcm; pcmRate = audio.rate;
+        const slot = $(b._id).querySelector(".slot");
+        slot.innerHTML=""; const a=document.createElement("audio"); a.controls=true;
+        a.src=URL.createObjectURL(wavBlob(audio.pcm,audio.rate)); slot.appendChild(a);
+        ok=true;
+      }catch(e){
+        lastErr=(e.message||"")+"";
+        if(/per day|perday|daily|quota.*day/i.test(lastErr)){ hitDaily=true; break; }      // daily cap — stop, resume later
+        if(!/429|rate|resource_exhausted|quota|exhaust|overload|503|500/i.test(lastErr) && attempt>0){ break; } // not a rate error — don't hammer
+        for(let s=Math.round(delay/1000);s>0 && !cancelGen;s--){ st.innerHTML=`<span class="spin"></span>Rate limit — waiting ${s}s, then continuing (${i} of ${todo.length})…`; await new Promise(r=>setTimeout(r,1000)); }
+        delay=Math.min(delay*1.7,30000);
+      }
     }
+    if(hitDaily || cancelGen) break;
+    if(!ok) $(b._id).querySelector(".slot").innerHTML=`<div class="style">voice failed: ${escapeHtml(lastErr)} — click Generate voices again to retry just this one.</div>`;
   }
   const done = spoken.filter(b=>b._pcm).length;
-  st.textContent = done===spoken.length ? "Voices done — all "+done+" lines." : `Voiced ${done} of ${spoken.length}. Some failed (likely the rate limit) — click Generate voices again to fill the rest.`;
+  if(cancelGen) st.textContent = `Stopped — ${done} of ${spoken.length} voiced. Switch model/provider in Settings and click Generate voices to continue the rest.`;
+  else if(hitDaily) st.textContent = `Voiced ${done} of ${spoken.length}. Daily limit reached on this model — switch the Voice model/provider (gear) or come back after midnight Pacific, then Generate voices again.`;
+  else st.textContent = done===spoken.length ? "Voices done — all "+done+" lines." : `Voiced ${done} of ${spoken.length}. Some still failing — wait a minute and click Generate voices again, or switch provider.`;
+  $("stopBtn").classList.add("hidden");
   $("downloadBtn").disabled=false;
   $("downloadMp3Btn").disabled=false;
   $("videoBtn").disabled=false;
@@ -412,6 +492,23 @@ async function tts(model, voice, text){
     }
   }
   throw new Error("no audio returned (try the 3.1 TTS model name)");
+}
+
+// Puter.js voice — free, no key. Routes through Gemini voices, decodes to our 24kHz mono PCM.
+let _ac=null;
+async function puterTTS(model, voice, instructions, text){
+  if(typeof puter==="undefined") throw new Error("Puter.js didn't load (check your connection)");
+  const audio = await puter.ai.txt2speech(text, { provider:"gemini", model, voice, instructions:instructions||"" });
+  const resp = await fetch(audio.src); const buf = await resp.arrayBuffer();
+  _ac = _ac || new (window.AudioContext||window.webkitAudioContext)();
+  const decoded = await _ac.decodeAudioData(buf);
+  // resample/downmix to 24kHz mono so it matches the rest of the pipeline
+  const off = new OfflineAudioContext(1, Math.max(1,Math.ceil(decoded.duration*24000)), 24000);
+  const s = off.createBufferSource(); s.buffer=decoded; s.connect(off.destination); s.start();
+  const r = await off.startRendering(); const f = r.getChannelData(0);
+  const pcm = new Uint8Array(f.length*2), dv = new DataView(pcm.buffer);
+  for(let i=0;i<f.length;i++){ let v=Math.max(-1,Math.min(1,f[i])); dv.setInt16(i*2, v<0?v*0x8000:v*0x7fff, true); }
+  return { pcm, rate:24000 };
 }
 
 $("downloadBtn").onclick = ()=>{
@@ -502,7 +599,8 @@ $("videoBtn").onclick = async ()=>{
   }
   const st=$("genStatus"), btn=$("videoBtn");
   btn.disabled=true; st.innerHTML='<span class="spin"></span>Preparing…';
-  const W=1280,H=720,FPS=30,HOLD=1.8;
+  const res=($("vidRes")&&$("vidRes").value||"1280x720").split("x");
+  const W=parseInt(res[0])||1280, H=parseInt(res[1])||720, FPS=30, HOLD=1.8;
   const canvas=$("vcanvas"); canvas.width=W; canvas.height=H; canvas.classList.remove("hidden");
   const cx=canvas.getContext("2d");
   const imgs={};
@@ -570,8 +668,9 @@ $("imagesBtn").onclick = async ()=>{
   const visuals=all.filter(b=>!b._img);                 // only what's missing
   if(!visuals.length){ st.textContent="All visuals already drawn."; return; }
   const already=all.length-visuals.length;
-  btn.disabled=true;
+  btn.disabled=true; cancelGen=false; $("stopBtn").classList.remove("hidden");
   for(let i=0;i<visuals.length;i++){
+    if(cancelGen) break;
     const b=visuals[i];
     st.innerHTML=`<span class="spin"></span>Drawing ${i+1} of ${visuals.length}${already?` (${already} already done)`:""}…`;
     try{
@@ -586,12 +685,80 @@ $("imagesBtn").onclick = async ()=>{
     }catch(e){
       $(b._id).querySelector(".slot").innerHTML=`<div class="style">image failed: ${escapeHtml(e.message)} — click Generate visuals again to retry just this one.</div>`;
     }
-    await new Promise(r=>setTimeout(r,800)); // gentle on the free-tier rate limit
+    if(cancelGen) break;
+    await new Promise(r=>setTimeout(r,800)); // gentle on the rate limit
   }
   const done=all.filter(b=>b._img).length;
-  st.textContent = done===all.length ? "Visuals done — all "+done+"." : `Drew ${done} of ${all.length}. Click Generate visuals again to fill the rest.`;
+  st.textContent = cancelGen ? `Stopped — ${done} of ${all.length} drawn. Click Generate visuals to continue.`
+    : (done===all.length ? "Visuals done — all "+done+"." : `Drew ${done} of ${all.length}. Click Generate visuals again to fill the rest.`);
+  $("stopBtn").classList.add("hidden");
   btn.disabled=false;
 };
+
+// ---------- projects: save / open / new (stored in this browser via IndexedDB) ----------
+const DB="s2s_db", STORE="projects";
+function idb(){ return new Promise((res,rej)=>{ const r=indexedDB.open(DB,1); r.onupgradeneeded=e=>e.target.result.createObjectStore(STORE,{keyPath:"id"}); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+function idbReq(mode,fn){ return idb().then(db=>new Promise((res,rej)=>{ const tx=db.transaction(STORE,mode); const rq=fn(tx.objectStore(STORE)); tx.oncomplete=()=>res(rq&&rq.result); tx.onerror=()=>rej(tx.error); if(rq) rq.onerror=()=>rej(rq.error); })); }
+const dbPut=rec=>idbReq("readwrite",s=>s.put(rec));
+const dbAll=()=>idbReq("readonly",s=>s.getAll());
+const dbGet=id=>idbReq("readonly",s=>s.get(id));
+const dbDel=id=>idbReq("readwrite",s=>s.delete(id));
+function projMsg(t){ const e=$("projMsg"); if(e) e.textContent=t?(" — "+t):""; }
+
+async function refreshSaved(selId){
+  let list=[]; try{ list=await dbAll(); }catch(e){}
+  list.sort((a,b)=>(b.savedAt||0)-(a.savedAt||0));
+  const sel=$("savedList");
+  if(!list.length){ sel.innerHTML='<option value="">— none saved yet —</option>'; return; }
+  sel.innerHTML="";
+  list.forEach(r=>{ const o=document.createElement("option"); o.value=r.id; o.textContent=r.name+"  ·  "+new Date(r.savedAt).toLocaleDateString(); sel.appendChild(o); });
+  sel.value = selId || localStorage.getItem("s2s_last") || list[0].id;   // preselect most recent / last used
+}
+
+function restoreMedia(){
+  let hasAudio=false;
+  project.beats.forEach(b=>{
+    const el=$(b._id); if(!el) return; const slot=el.querySelector(".slot"); if(!slot) return;
+    if(b._pcm){ hasAudio=true; slot.innerHTML=""; const a=document.createElement("audio"); a.controls=true; a.src=URL.createObjectURL(wavBlob(b._pcm,pcmRate)); slot.appendChild(a); }
+    else if(b._img){ slot.innerHTML=""; const im=document.createElement("img"); im.src=b._img; slot.appendChild(im); }
+  });
+  if(hasAudio) ["downloadBtn","downloadMp3Btn","videoBtn"].forEach(b=>$(b).disabled=false);
+}
+
+$("saveBtn").onclick = async ()=>{
+  if(!project){ projMsg("analyze a script first, then save"); return; }
+  const def=(project.title||"Untitled")+"";
+  const name=prompt("Name this project:", def); if(name===null) return;
+  const id="p"+Date.now();
+  try{ await dbPut({ id, name:name||def, savedAt:Date.now(), scriptText:$("script").value, pcmRate, project });
+       localStorage.setItem("s2s_last",id); await refreshSaved(id); projMsg("saved ✓"); }
+  catch(e){ projMsg("save failed: "+e.message); }
+};
+$("openBtn").onclick = async ()=>{
+  const id=$("savedList").value; if(!id){ projMsg("pick a saved project first"); return; }
+  let rec; try{ rec=await dbGet(id); }catch(e){ projMsg("open failed: "+e.message); return; }
+  if(!rec){ projMsg("not found"); return; }
+  $("script").value=rec.scriptText||""; pcmRate=rec.pcmRate||24000; project=rec.project||null;
+  if(project){ renderBreakdown(); restoreMedia(); }
+  localStorage.setItem("s2s_last",id); projMsg('opened “'+rec.name+'”');
+};
+$("newBtn").onclick = ()=>{
+  if(project && !confirm("Start a new project? Anything not saved will be cleared.")) return;
+  project=null;
+  $("beats").innerHTML=""; $("castBody").innerHTML="";
+  $("breakdownCard").classList.add("hidden"); $("storyCard").classList.add("hidden");
+  ["downloadBtn","downloadMp3Btn","videoBtn","exportBtn"].forEach(b=>$(b).disabled=true);
+  $("analyzeStatus").textContent=""; $("genStatus").textContent=""; $("script").value=SAMPLE;
+  projMsg("new project");
+};
+$("delBtn").onclick = async ()=>{
+  const id=$("savedList").value; if(!id){ projMsg("pick a project to delete"); return; }
+  if(!confirm("Delete this saved project? This can't be undone.")) return;
+  try{ await dbDel(id); await refreshSaved(); projMsg("deleted"); }catch(e){ projMsg("delete failed: "+e.message); }
+};
+
+refreshSaved();
+
 </script>
 </body>
 </html>
