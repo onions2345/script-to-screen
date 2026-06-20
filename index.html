@@ -237,6 +237,18 @@ function wavBytes(pcm, rate){
 function wavBlob(pcm, rate){ return new Blob([wavBytes(pcm,rate)],{type:"audio/wav"}); }
 function bytesToB64(bytes){ let bin="",ch=0x8000; for(let i=0;i<bytes.length;i+=ch) bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+ch)); return btoa(bin); }
 
+// load the MP3 encoder once, on demand
+let _Mp3=null;
+async function loadMp3(){ if(_Mp3) return _Mp3; const m=await import("https://esm.run/@breezystack/lamejs"); _Mp3 = m.Mp3Encoder || (m.default && m.default.Mp3Encoder); if(!_Mp3) throw new Error("encoder unavailable"); return _Mp3; }
+function pcmToMp3Bytes(Mp3, pcm, rate){
+  const s16=new Int16Array(pcm.buffer, pcm.byteOffset, Math.floor(pcm.length/2));
+  const enc=new Mp3(1, rate, 96), out=[], block=1152;
+  for(let i=0;i<s16.length;i+=block){ const buf=enc.encodeBuffer(s16.subarray(i,i+block)); if(buf.length) out.push(new Uint8Array(buf)); }
+  const tail=enc.flush(); if(tail.length) out.push(new Uint8Array(tail));
+  const total=out.reduce((n,a)=>n+a.length,0), all=new Uint8Array(total); let o=0; out.forEach(a=>{all.set(a,o);o+=a.length;});
+  return all;
+}
+
 // ---------- STEP 1: analyze ----------
 let project = null;       // {title, voiceCast, beats}
 let pcmRate = 24000;
@@ -395,10 +407,11 @@ $("downloadMp3Btn").onclick = async ()=>{
   }
 };
 
-$("exportBtn").onclick = ()=>{
+$("exportBtn").onclick = async ()=>{
   if(!project) return;
   const st=$("genStatus"); st.innerHTML='<span class="spin"></span>Building storyboard…';
   const esc = s => (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  let Mp3=null; try{ Mp3=await loadMp3(); }catch(e){ Mp3=null; }   // MP3 keeps the file ~10x smaller; WAV is the fallback
   let body="";
   project.beats.forEach(b=>{
     if(b.type==="visual"){
@@ -410,7 +423,11 @@ $("exportBtn").onclick = ()=>{
     } else {
       const who = b.type==="onscreen" ? "ON SCREEN" : (b.speaker||"LINE");
       body += `<section class="l ${b.type}"><div class="who">${esc(who)}</div><p>${esc(b.text||"")}</p>`;
-      if(b._pcm) body += `<audio controls src="data:audio/wav;base64,${bytesToB64(wavBytes(b._pcm,pcmRate))}"></audio>`;
+      if(b._pcm){
+        const src = Mp3 ? ("data:audio/mpeg;base64,"+bytesToB64(pcmToMp3Bytes(Mp3,b._pcm,pcmRate)))
+                        : ("data:audio/wav;base64,"+bytesToB64(wavBytes(b._pcm,pcmRate)));
+        body += `<audio controls src="${src}"></audio>`;
+      }
       body += `</section>`;
     }
   });
@@ -433,7 +450,7 @@ $("exportBtn").onclick = ()=>{
 <body><div class="wrap"><h1>${title}</h1><p class="sub">Storyboard — images, lines, and audio in one self-contained file.</p>${body}</div></body></html>`;
   const url=URL.createObjectURL(new Blob([doc],{type:"text/html"}));
   const a=document.createElement("a"); a.href=url; a.download=(project.title||"storyboard")+".html"; a.click();
-  st.textContent="Storyboard exported — open the .html file in any browser.";
+  st.textContent = Mp3 ? "Storyboard exported (MP3 audio — small file)." : "Storyboard exported (WAV audio — encoder unavailable, larger file).";
 };
 
 $("videoBtn").onclick = async ()=>{
