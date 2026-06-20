@@ -184,6 +184,7 @@
       <button id="exportBtn" class="ghost" disabled>Export storyboard (HTML)</button>
       <button id="videoBtn" class="ghost" disabled>Render video (WebM)</button>
     </div>
+    <p class="hint"><strong>Long script?</strong> The free tier caps requests per minute, so some lines/images may fail at first — that's normal. Wait a few seconds and click again; it only fills what's missing. Repeat until done.</p>
     <div id="genStatus" class="status"></div>
     <canvas id="vcanvas" class="hidden" style="width:100%;border-radius:10px;margin-top:14px;background:#0b0e16;aspect-ratio:16/9"></canvas>
   </div>
@@ -335,7 +336,13 @@ function renderBreakdown(){
     tr.innerHTML=`<td>${sp}</td><td><select data-sp="${sp}">${opts}</select></td>`;
     cast.appendChild(tr);
   });
-  cast.querySelectorAll("select").forEach(s=> s.onchange=()=> project.voiceCast[s.dataset.sp]=s.value);
+  cast.querySelectorAll("select").forEach(s=> s.onchange=()=>{
+    const sp=s.dataset.sp; project.voiceCast[sp]=s.value;
+    project.beats.forEach(b=>{                                  // re-voice just this character next time
+      const mine = (b.type==="line"&&b.speaker===sp) || (sp==="ON SCREEN"&&b.type==="onscreen");
+      if(mine){ delete b._pcm; const el=$(b._id); if(el){ const sl=el.querySelector(".slot"); if(sl) sl.innerHTML=""; } }
+    });
+  });
   renderBeats();
   $("exportBtn").disabled=false;
   $("breakdownCard").classList.remove("hidden");
@@ -362,10 +369,13 @@ $("voicesBtn").onclick = async ()=>{
   if(!project) return;
   const btn=$("voicesBtn"), st=$("genStatus");
   const spoken = project.beats.filter(b=>b.type==="line"||b.type==="onscreen");
+  const todo = spoken.filter(b=>!b._pcm);              // only what's missing
+  if(!todo.length){ st.textContent="All lines already voiced."; $("downloadBtn").disabled=false; $("downloadMp3Btn").disabled=false; $("videoBtn").disabled=false; return; }
   btn.disabled=true;
-  for(let i=0;i<spoken.length;i++){
-    const b=spoken[i];
-    st.innerHTML=`<span class="spin"></span>Voicing ${i+1} of ${spoken.length}…`;
+  const already = spoken.length - todo.length;
+  for(let i=0;i<todo.length;i++){
+    const b=todo[i];
+    st.innerHTML=`<span class="spin"></span>Voicing ${i+1} of ${todo.length}${already?` (${already} already done)`:""}…`;
     try{
       const voice = b.type==="onscreen" ? (project.voiceCast["ON SCREEN"]||"Iapetus") : (project.voiceCast[b.speaker]||"Charon");
       const instruct = b.type==="onscreen"
@@ -377,10 +387,11 @@ $("voicesBtn").onclick = async ()=>{
       slot.innerHTML=""; const a=document.createElement("audio"); a.controls=true;
       a.src=URL.createObjectURL(wavBlob(audio.pcm,audio.rate)); slot.appendChild(a);
     }catch(e){
-      $(b._id).querySelector(".slot").innerHTML=`<div class="style">voice failed: ${escapeHtml(e.message)}</div>`;
+      $(b._id).querySelector(".slot").innerHTML=`<div class="style">voice failed: ${escapeHtml(e.message)} — click Generate voices again to retry just this one.</div>`;
     }
   }
-  st.textContent="Voices done.";
+  const done = spoken.filter(b=>b._pcm).length;
+  st.textContent = done===spoken.length ? "Voices done — all "+done+" lines." : `Voiced ${done} of ${spoken.length}. Some failed (likely the rate limit) — click Generate voices again to fill the rest.`;
   $("downloadBtn").disabled=false;
   $("downloadMp3Btn").disabled=false;
   $("videoBtn").disabled=false;
@@ -555,11 +566,14 @@ $("videoBtn").onclick = async ()=>{
 $("imagesBtn").onclick = async ()=>{
   if(!project) return;
   const btn=$("imagesBtn"), st=$("genStatus");
-  const visuals=project.beats.filter(b=>b.type==="visual");
+  const all=project.beats.filter(b=>b.type==="visual");
+  const visuals=all.filter(b=>!b._img);                 // only what's missing
+  if(!visuals.length){ st.textContent="All visuals already drawn."; return; }
+  const already=all.length-visuals.length;
   btn.disabled=true;
   for(let i=0;i<visuals.length;i++){
     const b=visuals[i];
-    st.innerHTML=`<span class="spin"></span>Drawing ${i+1} of ${visuals.length}…`;
+    st.innerHTML=`<span class="spin"></span>Drawing ${i+1} of ${visuals.length}${already?` (${already} already done)`:""}…`;
     try{
       const data=await gemini($("mImg").value.trim(),{
         contents:[{parts:[{text:"Cinematic film still, atmospheric, no text or words in image. "+(b.prompt||"")}]}],
@@ -570,11 +584,12 @@ $("imagesBtn").onclick = async ()=>{
       if(part){ b._img="data:"+(part.inlineData.mimeType||"image/png")+";base64,"+part.inlineData.data; const img=document.createElement("img"); img.src=b._img; slot.appendChild(img); }
       else slot.innerHTML='<div class="style">no image returned</div>';
     }catch(e){
-      $(b._id).querySelector(".slot").innerHTML=`<div class="style">image failed: ${escapeHtml(e.message)}</div>`;
+      $(b._id).querySelector(".slot").innerHTML=`<div class="style">image failed: ${escapeHtml(e.message)} — click Generate visuals again to retry just this one.</div>`;
     }
     await new Promise(r=>setTimeout(r,800)); // gentle on the free-tier rate limit
   }
-  st.textContent="Visuals done.";
+  const done=all.filter(b=>b._img).length;
+  st.textContent = done===all.length ? "Visuals done — all "+done+"." : `Drew ${done} of ${all.length}. Click Generate visuals again to fill the rest.`;
   btn.disabled=false;
 };
 </script>
