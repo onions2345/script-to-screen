@@ -518,7 +518,7 @@ function blobToDataURL(blob){ return new Promise((res,rej)=>{ const r=new FileRe
 async function genImageGemini(prompt){
   const data=await gemini($("mImg").value.trim(),{
     contents:[{parts:[{text:IMG_PREFIX+prompt}]}],
-    generationConfig:{ responseModalities:["IMAGE","TEXT"] }
+    generationConfig:{ responseModalities:["IMAGE","TEXT"], imageConfig:{ aspectRatio:"16:9" } }   // match the 16:9 video frame (both resolutions are 16:9); otherwise Gemini returns ~square
   });
   const part=data.candidates?.[0]?.content?.parts?.find(p=>p.inlineData);
   if(!part) throw new Error("no image returned");
