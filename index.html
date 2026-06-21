@@ -392,7 +392,7 @@
   <div id="breakdownCard" class="card hidden">
     <p class="step">STEP 2</p>
     <h2 id="projTitle">Breakdown &amp; casting</h2>
-    <p class="hint">Each character is cast to a Gemini voice. Press <strong>▶</strong> to hear a voice, change any of them, then generate. <span id="castMsg" style="color:var(--shoot)"></span></p>
+    <p class="hint">Each character is cast to a voice. Press <strong>▶</strong> to hear the voice this character will use with your current provider, change any of them, then generate. <span id="castMsg" style="color:var(--shoot)"></span></p>
     <table class="cast"><tbody id="castBody"></tbody></table>
     <div class="btnrow">
       <button id="voicesBtn" class="amber">Generate voices</button>
@@ -707,25 +707,28 @@ function renderBreakdown(){
         if(mine){ delete b._pcm; const el=$(b._id); if(el){ const sl=el.querySelector(".slot"); if(sl) sl.innerHTML=""; } }
       });
     };
-    pb.onclick=()=>previewVoice(s.value, pb);                     // preview whatever is currently selected in this row
+    pb.onclick=()=>previewVoice(s.dataset.sp, s.value, pb);      // preview the voice this character will actually use
   });
   renderBeats();
   $("exportBtn").disabled=false;
   $("breakdownCard").classList.remove("hidden");
   $("storyCard").classList.remove("hidden");
 }
-// ---- voice preview: synthesize a short Gemini sample once per voice, then replay from cache ----
+// ---- voice preview: synthesize a short sample via the SAME path real lines use (so it's framed correctly and matches the chosen provider) ----
 const PREVIEW_LINE="Hi — this is the voice I'll use for this character.";
 const _voiceSamples={};
 let _previewAudio=null;
-async function previewVoice(voiceName, btn){
-  if(!voiceName) return;
+async function previewVoice(sp, selVoice, btn){
+  const provider=$("ttsProvider").value;
+  if(provider==="webspeech"){ setCastMsg("Preview isn't available for Browser voice (it records live while generating). Pick another provider to preview."); return; }
+  const key=provider+"::"+sp+"::"+selVoice;
   try{
-    let s=_voiceSamples[voiceName];
+    let s=_voiceSamples[key];
     if(!s){
-      btn.disabled=true; btn.textContent="…"; setCastMsg("Generating "+voiceName+" sample…");
-      s=await tts($("mTts").value.trim(), voiceName, PREVIEW_LINE);   // one-off Gemini TTS sample (uses a little quota; cached after)
-      _voiceSamples[voiceName]=s; setCastMsg("");
+      btn.disabled=true; btn.textContent="…"; setCastMsg("Generating "+(selVoice||sp)+" sample…");
+      const onscreen=isSysLabel(sp);
+      s=await ttsForBeat({ type:onscreen?"onscreen":"line", speaker:sp, text:PREVIEW_LINE, style:"natural, clear" });
+      _voiceSamples[key]=s; setCastMsg("");                       // cached: replaying is instant & free
     }
     btn.disabled=false; btn.textContent="▶";
     try{ if(_previewAudio) _previewAudio.pause(); }catch(_){}
@@ -733,7 +736,7 @@ async function previewVoice(voiceName, btn){
     _previewAudio.play();
   }catch(e){
     btn.disabled=false; btn.textContent="▶";
-    setCastMsg("Couldn't preview — previews use Gemini TTS, so a working Gemini key is needed. ("+((e&&e.message)||e)+")");
+    setCastMsg("Couldn't preview: "+((e&&e.message)||e));
   }
 }
 function setCastMsg(m){ const el=$("castMsg"); if(el) el.textContent=m; }
