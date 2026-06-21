@@ -195,6 +195,12 @@
   .beat .edit-actions{display:flex;gap:8px;margin-top:6px}
   .beat .edit-actions button{width:auto;font-size:12px;padding:7px 13px;border-radius:8px;letter-spacing:0;text-transform:none}
   .beat .edited-note{color:var(--shoot);font-size:12px;margin-top:8px}
+  .img-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .variants{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  .variant{position:relative;width:66px;height:38px;border-radius:6px;overflow:hidden;border:2px solid transparent;cursor:pointer}
+  .variant img{width:100%;height:100%;object-fit:cover;display:block;margin:0;border-radius:0}
+  .variant.sel{border-color:var(--shoot)}
+  .variant .varx{position:absolute;top:1px;right:1px;width:16px;height:16px;min-width:0;padding:0;line-height:13px;font-size:12px;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;border:none;cursor:pointer}
   .status{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:12px;white-space:pre-wrap}
   .spin{display:inline-block;width:11px;height:11px;border:2px solid var(--line);border-top-color:var(--shoot);border-radius:50%;animation:s .7s linear infinite;vertical-align:-1px;margin-right:6px}
   @keyframes s{to{transform:rotate(360deg)}}
@@ -711,7 +717,7 @@ function beatViewHTML(b){
   const who = b.type==="onscreen" ? "On screen" : (b.speaker||"Line");
   return editBtn + `<div class="who ${b.type}">${escapeHtml(who)}</div><p>${escapeHtml(b.text||"")}</p>${b.style?`<div class="style">${escapeHtml(b.style)}</div>`:""}<div class="slot"></div>`;
 }
-function fillSlot(b){ if(b._pcm) fillAudioSlot(b); else if(b._img) fillImageSlot(b); }   // restore the media + Regenerate button if present
+function fillSlot(b){ if(b._pcm) fillAudioSlot(b); else if(b.type==="visual") fillImageSlot(b); }   // visual beats always show Generate/Upload + any images
 function renderOneBeat(b){                       // rebuild a single card in view mode and re-attach its slot media
   const el=$(b._id); if(!el) return;
   el.innerHTML=beatViewHTML(b);
@@ -725,6 +731,7 @@ function renderBeats(){
     el.innerHTML=beatViewHTML(b);
     wrap.appendChild(el);
     const eb=el.querySelector(".editbtn"); if(eb) eb.onclick=()=>enterEdit(b);
+    if(b.type==="visual") fillImageSlot(b);     // Generate/Upload available from the start
   });
 }
 // ---------- inline editing of a beat's text ----------
@@ -1244,7 +1251,7 @@ $("imagesBtn").onclick = async ()=>{
     st.innerHTML=`<span class="spin"></span>Drawing ${i+1} of ${visuals.length}${already?` (${already} already done)`:""}…`;
     try{
       const url=await genImage(b.prompt||"");
-      b._img=url; fillImageSlot(b);
+      addBeatImage(b,url); fillImageSlot(b);
     }catch(e){
       $(b._id).querySelector(".slot").innerHTML=`<div class="style">image failed: ${escapeHtml(e.message)} — click Generate visuals again to retry just this one, or switch image provider in <a href="#" onclick="openSettings();return false;">Settings ⚙</a>.</div>`;
     }
@@ -1284,7 +1291,7 @@ function restoreMedia(){
   project.beats.forEach(b=>{
     const el=$(b._id); if(!el) return; const slot=el.querySelector(".slot"); if(!slot) return;
     if(b._pcm){ hasAudio=true; fillAudioSlot(b); }
-    else if(b._img){ fillImageSlot(b); }
+    else if(b.type==="visual"){ fillImageSlot(b); }
   });
   if(hasAudio) ["downloadBtn","downloadMp3Btn","videoBtn"].forEach(b=>$(b).disabled=false);
 }
@@ -1302,10 +1309,62 @@ function fillAudioSlot(b){
 }
 function fillImageSlot(b){
   const slot=$(b._id)&&$(b._id).querySelector(".slot"); if(!slot) return;
+  if(b._img && (!b._imgs || !b._imgs.length)) b._imgs=[b._img];     // migrate an older single image into the history
   slot.innerHTML="";
-  const btn=document.createElement("button"); btn.className="ghost regen"; btn.type="button"; btn.textContent="↻ Regenerate";
-  btn.onclick=()=>regenImage(b,btn); slot.appendChild(btn);
-  const im=document.createElement("img"); im.src=b._img; slot.appendChild(im);
+  const row=document.createElement("div"); row.className="img-actions";
+  const regen=document.createElement("button"); regen.className="ghost regen"; regen.type="button";
+  regen.textContent = b._img ? "↻ Regenerate" : "✦ Generate";
+  regen.onclick=()=>regenImage(b,regen);
+  const up=document.createElement("button"); up.className="ghost regen"; up.type="button"; up.textContent="⬆ Upload";
+  up.onclick=()=>uploadBeatImage(b);
+  row.appendChild(regen); row.appendChild(up); slot.appendChild(row);
+  if(b._img){ const im=document.createElement("img"); im.src=b._img; slot.appendChild(im); }
+  if(b._imgs && b._imgs.length>1){                                  // thumbnail strip: click to pick, × to remove
+    const strip=document.createElement("div"); strip.className="variants";
+    b._imgs.forEach((u,idx)=>{
+      const t=document.createElement("div"); t.className="variant"+(u===b._img?" sel":""); t.title="Use this image";
+      const ti=document.createElement("img"); ti.src=u; ti.onclick=()=>selectBeatImage(b,u); t.appendChild(ti);
+      const x=document.createElement("button"); x.className="varx"; x.type="button"; x.textContent="×"; x.title="Remove this one";
+      x.onclick=(e)=>{ e.stopPropagation(); deleteBeatImage(b,idx); };
+      t.appendChild(x); strip.appendChild(t);
+    });
+    slot.appendChild(strip);
+  }
+}
+function addBeatImage(b,url){                                       // keep every generated/uploaded image; newest becomes selected
+  if(!b._imgs) b._imgs = b._img ? [b._img] : [];
+  b._imgs.push(url); b._img=url;
+  const MAX=8;
+  while(b._imgs.length>MAX){ const i=b._imgs.findIndex(u=>u!==b._img); if(i<0) break; b._imgs.splice(i,1); }  // drop oldest, never the selected
+}
+function selectBeatImage(b,u){ b._img=u; fillImageSlot(b); }
+function deleteBeatImage(b,idx){
+  if(!b._imgs||idx<0||idx>=b._imgs.length) return;
+  const wasSel=b._imgs[idx]===b._img;
+  b._imgs.splice(idx,1);
+  if(wasSel) b._img = b._imgs.length ? b._imgs[b._imgs.length-1] : null;
+  fillImageSlot(b);
+}
+function fileToScaledDataURL(file,max){                             // downscale uploads so they don't bloat memory/storage
+  return new Promise((res,rej)=>{
+    const fr=new FileReader();
+    fr.onerror=()=>rej(new Error("couldn't read that file"));
+    fr.onload=()=>{ const img=new Image(); img.onerror=()=>rej(new Error("that file isn't an image")); img.onload=()=>{
+      let w=img.naturalWidth||img.width, h=img.naturalHeight||img.height;
+      const s=Math.min(1, max/Math.max(w,h||1)); w=Math.max(1,Math.round(w*s)); h=Math.max(1,Math.round(h*s));
+      const c=document.createElement("canvas"); c.width=w; c.height=h; c.getContext("2d").drawImage(img,0,0,w,h);
+      res(c.toDataURL("image/jpeg",0.85));
+    }; img.src=fr.result; };
+    fr.readAsDataURL(file);
+  });
+}
+function uploadBeatImage(b){
+  const inp=document.createElement("input"); inp.type="file"; inp.accept="image/*";
+  inp.onchange=async ()=>{ const f=inp.files&&inp.files[0]; if(!f) return;
+    try{ const url=await fileToScaledDataURL(f,1280); addBeatImage(b,url); fillImageSlot(b); }
+    catch(e){ const slot=$(b._id)&&$(b._id).querySelector(".slot"); if(slot){ const d=document.createElement("div"); d.className="style"; d.style.marginTop="8px"; d.textContent="upload failed: "+((e&&e.message)||e); slot.appendChild(d); } }
+  };
+  inp.click();
 }
 function regenFail(b,btn,prev,msg){
   btn.disabled=false; btn.textContent=prev;
@@ -1323,9 +1382,9 @@ async function regenAudio(b,btn){
   }catch(e){ regenFail(b,btn,prev,"regenerate failed: "+linkify(escapeHtml(e.message||String(e)))+" — or switch voice provider in <a href=\"#\" onclick=\"openSettings();return false;\">Settings ⚙</a>."); }
 }
 async function regenImage(b,btn){
-  const prev=btn.textContent; btn.disabled=true; btn.textContent="↻ regenerating…";
-  try{ const url=await genImage(b.prompt||""); b._img=url; fillImageSlot(b); }
-  catch(e){ regenFail(b,btn,prev,"regenerate failed: "+escapeHtml(e.message||String(e))+" — or switch image provider in <a href=\"#\" onclick=\"openSettings();return false;\">Settings ⚙</a>."); }
+  const prev=btn.textContent; btn.disabled=true; btn.textContent="↻ generating…";
+  try{ const url=await genImage(b.prompt||""); addBeatImage(b,url); fillImageSlot(b); }
+  catch(e){ regenFail(b,btn,prev,"image failed: "+escapeHtml(e.message||String(e))+" — or switch image provider in <a href=\"#\" onclick=\"openSettings();return false;\">Settings ⚙</a>."); }
 }
 // single-beat voice generation, using whatever provider/voice is set now (shared by the loop and Regenerate)
 async function ttsForBeat(b){
