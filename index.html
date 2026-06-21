@@ -187,6 +187,14 @@
   .beat audio{width:100%;margin-top:10px}
   .beat img{width:100%;border-radius:8px;margin-top:10px;display:block}
   .beat .cap{font-family:var(--mono);font-size:12px;color:var(--shoot);margin-top:8px}
+  .beat{position:relative}
+  .beat .editbtn{position:absolute;top:10px;right:10px;width:auto;font-size:12px;padding:4px 10px;border-radius:8px;letter-spacing:0;text-transform:none}
+  .beat textarea.edit{min-height:72px;margin:6px 0}
+  .beat input.edit{margin:6px 0}
+  .beat .edlabel{display:block;font-size:12px;color:var(--muted);margin-top:6px}
+  .beat .edit-actions{display:flex;gap:8px;margin-top:6px}
+  .beat .edit-actions button{width:auto;font-size:12px;padding:7px 13px;border-radius:8px;letter-spacing:0;text-transform:none}
+  .beat .edited-note{color:var(--shoot);font-size:12px;margin-top:8px}
   .status{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:12px;white-space:pre-wrap}
   .spin{display:inline-block;width:11px;height:11px;border:2px solid var(--line);border-top-color:var(--shoot);border-radius:50%;animation:s .7s linear infinite;vertical-align:-1px;margin-right:6px}
   @keyframes s{to{transform:rotate(360deg)}}
@@ -695,18 +703,58 @@ function renderBreakdown(){
   $("storyCard").classList.remove("hidden");
 }
 
+function beatViewHTML(b){
+  const editBtn = `<button class="ghost editbtn">✎ Edit</button>`;
+  if(b.type==="visual"){
+    return editBtn + `<div class="who visual">Visual</div><p>${escapeHtml(b.prompt||"")}</p>${b.caption?`<div class="cap">${escapeHtml(b.caption)}</div>`:""}<div class="slot"></div>`;
+  }
+  const who = b.type==="onscreen" ? "On screen" : (b.speaker||"Line");
+  return editBtn + `<div class="who ${b.type}">${escapeHtml(who)}</div><p>${escapeHtml(b.text||"")}</p>${b.style?`<div class="style">${escapeHtml(b.style)}</div>`:""}<div class="slot"></div>`;
+}
+function fillSlot(b){ if(b._pcm) fillAudioSlot(b); else if(b._img) fillImageSlot(b); }   // restore the media + Regenerate button if present
+function renderOneBeat(b){                       // rebuild a single card in view mode and re-attach its slot media
+  const el=$(b._id); if(!el) return;
+  el.innerHTML=beatViewHTML(b);
+  const eb=el.querySelector(".editbtn"); if(eb) eb.onclick=()=>enterEdit(b);
+  fillSlot(b);
+}
 function renderBeats(){
   const wrap=$("beats"); wrap.innerHTML="";
   project.beats.forEach(b=>{
     const el=document.createElement("div"); el.className="beat"; el.id=b._id;
-    if(b.type==="visual"){
-      el.innerHTML=`<div class="who visual">Visual</div><p>${escapeHtml(b.prompt||"")}</p>${b.caption?`<div class="cap">${escapeHtml(b.caption)}</div>`:""}<div class="slot"></div>`;
-    }else{
-      const who = b.type==="onscreen" ? "On screen" : (b.speaker||"Line");
-      el.innerHTML=`<div class="who ${b.type}">${escapeHtml(who)}</div><p>${escapeHtml(b.text||"")}</p>${b.style?`<div class="style">${escapeHtml(b.style)}</div>`:""}<div class="slot"></div>`;
-    }
+    el.innerHTML=beatViewHTML(b);
     wrap.appendChild(el);
+    const eb=el.querySelector(".editbtn"); if(eb) eb.onclick=()=>enterEdit(b);
   });
+}
+// ---------- inline editing of a beat's text ----------
+function enterEdit(b){
+  const el=$(b._id); if(!el) return;
+  const isV=b.type==="visual";
+  const mainVal=isV?(b.prompt||""):(b.text||"");
+  const subVal =isV?(b.caption||""):(b.style||"");
+  const mainLabel=isV?"Image prompt":(b.type==="onscreen"?"On-screen text":"Spoken text");
+  const subLabel =isV?"Caption (optional)":"Delivery note (optional)";
+  const who=isV?"Visual":(b.type==="onscreen"?"On screen":(b.speaker||"Line"));
+  el.innerHTML = `<div class="who ${isV?"visual":b.type}">${escapeHtml(who)}</div>`
+    + `<label class="edlabel">${mainLabel}</label><textarea class="edit main"></textarea>`
+    + `<label class="edlabel">${subLabel}</label><input class="edit sub" type="text">`
+    + `<div class="edit-actions"><button class="primary save">Save</button><button class="ghost cancel">Cancel</button></div>`;
+  const ta=el.querySelector("textarea.main"); ta.value=mainVal;     // set via JS so raw text isn't HTML-escaped
+  const sub=el.querySelector("input.sub"); sub.value=subVal;
+  el.querySelector(".save").onclick=()=>saveEdit(b, ta.value, sub.value);
+  el.querySelector(".cancel").onclick=()=>renderOneBeat(b);
+  ta.focus();
+}
+function saveEdit(b, mainVal, subVal){
+  const isV=b.type==="visual";
+  const before=isV?(b.prompt||""):(b.text||"");
+  if(isV){ b.prompt=mainVal; b.caption=subVal; } else { b.text=mainVal; b.style=subVal; }
+  renderOneBeat(b);
+  if(before!==mainVal){                                 // existing audio/image is now stale — nudge to regenerate
+    const had = isV ? !!b._img : !!b._pcm;
+    if(had){ const el=$(b._id); if(el){ const n=document.createElement("div"); n.className="edited-note"; n.textContent="✎ Edited — click Regenerate (or Generate "+(isV?"visuals":"voices")+") to apply the new "+(isV?"prompt":"text")+"."; el.appendChild(n); } }
+  }
 }
 function escapeHtml(s){return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 function linkify(s){return (s||"").replace(/https?:\/\/[^\s"<]+/g, u=>`<a href="${u}" target="_blank" rel="noopener">${u}</a>`);}  // make URLs in errors clickable
