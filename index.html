@@ -175,6 +175,8 @@
   details.settings summary::before{content:'⚙  ';color:var(--muted)}
   .cast{width:100%;border-collapse:collapse;margin-top:8px;font-size:14px}
   .cast td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+  .cast .prevcell{width:46px;text-align:right}
+  .cast .prev{width:auto;padding:7px 12px;font-size:14px;line-height:1}
   .cast td:first-child{font-family:var(--mono);color:var(--amber);white-space:nowrap}
   .cast select{padding:7px 9px}
   .beat{border:1px solid var(--line);border-radius:11px;padding:14px;margin-top:12px;background:var(--panel-2)}
@@ -390,7 +392,7 @@
   <div id="breakdownCard" class="card hidden">
     <p class="step">STEP 2</p>
     <h2 id="projTitle">Breakdown &amp; casting</h2>
-    <p class="hint">Each character is cast to a Gemini voice. Change any of them, then generate.</p>
+    <p class="hint">Each character is cast to a Gemini voice. Press <strong>▶</strong> to hear a voice, change any of them, then generate. <span id="castMsg" style="color:var(--shoot)"></span></p>
     <table class="cast"><tbody id="castBody"></tbody></table>
     <div class="btnrow">
       <button id="voicesBtn" class="amber">Generate voices</button>
@@ -693,21 +695,48 @@ function renderBreakdown(){
   Object.entries(project.voiceCast||{}).forEach(([sp,voice])=>{
     const tr=document.createElement("tr");
     const opts=VOICES.map(v=>`<option ${v===voice?"selected":""}>${v}</option>`).join("");
-    tr.innerHTML=`<td>${sp}</td><td><select data-sp="${sp}">${opts}</select></td>`;
+    tr.innerHTML=`<td>${escapeHtml(sp)}</td><td><select data-sp="${escapeHtml(sp)}">${opts}</select></td><td class="prevcell"><button type="button" class="ghost prev" title="Hear this voice">▶</button></td>`;
     cast.appendChild(tr);
   });
-  cast.querySelectorAll("select").forEach(s=> s.onchange=()=>{
-    const sp=s.dataset.sp; project.voiceCast[sp]=s.value;
-    project.beats.forEach(b=>{                                  // re-voice just this character next time
-      const mine = (b.type==="line"&&b.speaker===sp) || (sp==="ON SCREEN"&&b.type==="onscreen");
-      if(mine){ delete b._pcm; const el=$(b._id); if(el){ const sl=el.querySelector(".slot"); if(sl) sl.innerHTML=""; } }
-    });
+  cast.querySelectorAll("tr").forEach(tr=>{
+    const s=tr.querySelector("select"), pb=tr.querySelector(".prev");
+    s.onchange=()=>{
+      const sp=s.dataset.sp; project.voiceCast[sp]=s.value;
+      project.beats.forEach(b=>{                                  // re-voice just this character next time
+        const mine = (b.type==="line" && normName(b.speaker)===normName(sp)) || (b.type==="onscreen" && isSysLabel(sp));
+        if(mine){ delete b._pcm; const el=$(b._id); if(el){ const sl=el.querySelector(".slot"); if(sl) sl.innerHTML=""; } }
+      });
+    };
+    pb.onclick=()=>previewVoice(s.value, pb);                     // preview whatever is currently selected in this row
   });
   renderBeats();
   $("exportBtn").disabled=false;
   $("breakdownCard").classList.remove("hidden");
   $("storyCard").classList.remove("hidden");
 }
+// ---- voice preview: synthesize a short Gemini sample once per voice, then replay from cache ----
+const PREVIEW_LINE="Hi — this is the voice I'll use for this character.";
+const _voiceSamples={};
+let _previewAudio=null;
+async function previewVoice(voiceName, btn){
+  if(!voiceName) return;
+  try{
+    let s=_voiceSamples[voiceName];
+    if(!s){
+      btn.disabled=true; btn.textContent="…"; setCastMsg("Generating "+voiceName+" sample…");
+      s=await tts($("mTts").value.trim(), voiceName, PREVIEW_LINE);   // one-off Gemini TTS sample (uses a little quota; cached after)
+      _voiceSamples[voiceName]=s; setCastMsg("");
+    }
+    btn.disabled=false; btn.textContent="▶";
+    try{ if(_previewAudio) _previewAudio.pause(); }catch(_){}
+    _previewAudio=new Audio(URL.createObjectURL(wavBlob(s.pcm,s.rate)));
+    _previewAudio.play();
+  }catch(e){
+    btn.disabled=false; btn.textContent="▶";
+    setCastMsg("Couldn't preview — previews use Gemini TTS, so a working Gemini key is needed. ("+((e&&e.message)||e)+")");
+  }
+}
+function setCastMsg(m){ const el=$("castMsg"); if(el) el.textContent=m; }
 
 function beatViewHTML(b){
   const editBtn = `<button class="ghost editbtn">✎ Edit</button>`;
@@ -915,14 +944,25 @@ const PUTER_TTS = {
   "puter-xai":    { voices:["eve","ara","rex","sal","leo"], build:v=>({provider:"xai", voice:v, language:"en"}) },
   "puter-eleven": { voices:["21m00Tcm4TlvDq8ikWAM"], build:v=>({provider:"elevenlabs", model:"eleven_multilingual_v2", voice:v}) }
 };
+// ---- speaker -> voice matching, tolerant of label variants ("NARRATOR (V.O.)", "Narrator", trailing spaces) ----
+const SYS_LABELS=["ON SCREEN","ON-SCREEN","ONSCREEN","SYSTEM","SCREEN","COMPUTER","COMPUTER VOICE","AI","DEVICE","TERMINAL"];
+function normName(s){ return (s||"").toUpperCase().replace(/\([^)]*\)/g,"").replace(/[^A-Z0-9]+/g," ").trim(); }
+function isSysLabel(s){ const n=normName(s); return SYS_LABELS.some(l=>normName(l)===n); }
+function castVoiceName(speaker,isOnscreen){          // Gemini named voice for this speaker, matched loosely so every line of one character uses the SAME voice
+  const cast=project.voiceCast||{}, want=normName(speaker);
+  for(const k in cast){ if(normName(k)===want) return cast[k]; }              // same speaker, any spelling/casing
+  if(isOnscreen){ for(const k in cast){ if(isSysLabel(k)) return cast[k]; } return "Iapetus"; }  // system/on-screen voice
+  return "Charon";
+}
+function castSpeakerList(){ return Object.keys(project.voiceCast||{}).filter(k=>!isSysLabel(k)).sort(); }
+function castSpeakerIdx(speaker){ const want=normName(speaker); return castSpeakerList().findIndex(k=>normName(k)===want); }
 function puterOpts(providerKey, speaker, isOnscreen, instr){
   const cfg = PUTER_TTS[providerKey] || PUTER_TTS["puter-gemini"];
   if(cfg.useCast){
-    const v = isOnscreen ? (project.voiceCast["ON SCREEN"]||"Iapetus") : (project.voiceCast[speaker]||"Charon");
+    const v = castVoiceName(speaker, isOnscreen);
     return cfg.build(v, instr);
   }
-  const speakers = Object.keys(project.voiceCast||{}).filter(s=>s!=="ON SCREEN").sort();
-  const idx = isOnscreen ? cfg.voices.length-1 : Math.max(0, speakers.indexOf(speaker));
+  const idx = isOnscreen ? cfg.voices.length-1 : Math.max(0, castSpeakerIdx(speaker));
   return cfg.build(cfg.voices[idx % cfg.voices.length], instr);
 }
 async function decodeToPCM24(buf){   // any encoded audio -> 24kHz mono Int16 PCM, to match the pipeline
@@ -946,8 +986,7 @@ async function puterTTS(opts, text){
 const GCLOUD_VOICES=["en-US-Neural2-A","en-US-Neural2-C","en-US-Neural2-D","en-US-Neural2-E","en-US-Neural2-F","en-US-Neural2-G","en-US-Neural2-H","en-US-Neural2-I","en-US-Neural2-J"];
 function gcloudVoice(speaker,isOnscreen){
   if(isOnscreen) return "en-US-Neural2-J";
-  const speakers=Object.keys(project.voiceCast||{}).filter(s=>s!=="ON SCREEN").sort();
-  return GCLOUD_VOICES[Math.max(0,speakers.indexOf(speaker)) % GCLOUD_VOICES.length];
+  return GCLOUD_VOICES[Math.max(0,castSpeakerIdx(speaker)) % GCLOUD_VOICES.length];
 }
 async function googleTTS(speaker,isOnscreen,text){
   const name=gcloudVoice(speaker,isOnscreen);
@@ -965,8 +1004,7 @@ async function googleTTS(speaker,isOnscreen,text){
 const SE_VOICES=["Brian","Amy","Emma","Joey","Joanna","Matthew","Kendra","Justin","Salli","Russell"];
 function seVoice(speaker,isOnscreen){
   if(isOnscreen) return "Brian";
-  const sp=Object.keys(project.voiceCast||{}).filter(s=>s!=="ON SCREEN").sort();
-  return SE_VOICES[Math.max(0,sp.indexOf(speaker)) % SE_VOICES.length];
+  return SE_VOICES[Math.max(0,castSpeakerIdx(speaker)) % SE_VOICES.length];
 }
 async function streamTTS(speaker,isOnscreen,text){
   const v=seVoice(speaker,isOnscreen);
@@ -993,8 +1031,7 @@ async function customTTS(text){
 const EL_VOICES=["21m00Tcm4TlvDq8ikWAM","pNInz6obpgDQGcFmaJgB","EXAVITQu4vr4xnSDxMaL","ErXwobaYiN019PkySvjV","MF3mGyEYCl7XYWbV9V6O","TxGEqnHWrfWFTfGW9XjX","AZnzlk1XvdvUeBnXmlld","yoZ06aMxZJJ28mfd3POQ"];
 function elVoice(speaker,isOnscreen){
   if(isOnscreen) return EL_VOICES[1];
-  const sp=Object.keys(project.voiceCast||{}).filter(s=>s!=="ON SCREEN").sort();
-  return EL_VOICES[Math.max(0,sp.indexOf(speaker)) % EL_VOICES.length];
+  return EL_VOICES[Math.max(0,castSpeakerIdx(speaker)) % EL_VOICES.length];
 }
 async function elevenTTS(speaker,isOnscreen,text){
   const key=($("elevenKey").value||"").trim();
@@ -1014,8 +1051,7 @@ function webVoices(){ return (window.speechSynthesis?speechSynthesis.getVoices()
 function webVoiceFor(speaker,isOnscreen){
   const vs=webVoices(); if(!vs.length) return null;
   if(isOnscreen) return vs[vs.length-1];
-  const sp=Object.keys(project.voiceCast||{}).filter(s=>s!=="ON SCREEN").sort();
-  return vs[Math.max(0,sp.indexOf(speaker)) % vs.length];
+  return vs[Math.max(0,castSpeakerIdx(speaker)) % vs.length];
 }
 async function webCaptureSetup(){            // call inside the click gesture, before other awaits
   if(_capStream && _capStream.getAudioTracks().length && _capStream.getAudioTracks()[0].readyState==="live") return;
@@ -1389,7 +1425,7 @@ async function regenImage(b,btn){
 // single-beat voice generation, using whatever provider/voice is set now (shared by the loop and Regenerate)
 async function ttsForBeat(b){
   const provider=$("ttsProvider").value, model=$("mTts").value.trim(), onscreen=b.type==="onscreen";
-  const voice=onscreen?(project.voiceCast["ON SCREEN"]||"Iapetus"):(project.voiceCast[b.speaker]||"Charon");
+  const voice = castVoiceName(b.speaker, onscreen);
   const styleInstr=onscreen?"Read in a flat, cold, robotic computer-readout voice, slightly slow.":("Speak in a "+(b.style||"natural, cinematic")+" tone.");
   const geminiText=(onscreen?"Read in a flat, cold, robotic computer-readout voice, slightly slow: ":("Say in a "+(b.style||"natural, cinematic")+" tone: "))+(b.text||"");
   return provider==="gemini" ? tts(model,voice,geminiText)
