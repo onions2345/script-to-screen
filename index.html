@@ -174,11 +174,12 @@
   details.settings summary::-webkit-details-marker{display:none}
   details.settings summary::before{content:'⚙  ';color:var(--muted)}
   details.fmt{margin-top:6px}
-  details.fmt summary{cursor:pointer;font-size:12px;color:var(--muted);list-style:none;display:inline-block}
+  details.fmt summary{cursor:pointer;font-size:12px;color:var(--shoot);list-style:none;display:inline-block}
   details.fmt summary::-webkit-details-marker{display:none}
   details.fmt summary::before{content:'▸ '}
   details.fmt[open] summary::before{content:'▾ '}
-  details.fmt summary:hover{color:var(--text)}
+  details.fmt summary span{text-decoration:underline}
+  details.fmt summary:hover{filter:brightness(1.2)}
   .cast{width:100%;border-collapse:collapse;margin-top:8px;font-size:14px}
   .cast td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
   .cast .prevcell{width:46px;text-align:right}
@@ -401,7 +402,7 @@
     <h2>Your script</h2>
     <p class="hint">Paste a script in <strong>any format</strong> — a screenplay, labelled dialogue, or plain prose. Gemini works out who's speaking, the on-screen text, and the shots.</p>
     <details class="fmt">
-      <summary>What can I paste? formats &amp; examples</summary>
+      <summary><span>What can I paste? formats &amp; examples</span></summary>
       <div class="hint" style="margin-top:8px;line-height:1.6">
         <strong>Plain prose / a story</strong> — read as narration; dialogue in quotes is split out to characters.<br>
         <strong>Who speaks</strong> — start a line with a name and a colon; each name gets its own voice: &nbsp;<code>NARRATOR:</code> <code>REES:</code> <code>DEV:</code><br>
@@ -562,7 +563,7 @@ if(!$("script").value) $("script").value = SAMPLE;
 
 // ---------- helpers ----------
 function keyEnabled(feature){ const el=$("useKey"+feature); return el ? el.checked : true; }   // is the user's key allowed for Script | Audio | Images
-function getKey(){ const k=$("key").value.trim(); if(!k){ if(typeof openSettings==="function") openSettings(); $("key").focus(); throw new Error("Add your Gemini API key in Settings ⚙ first."); } return k; }
+function getKey(){ const k=$("key").value.trim(); if(!k) throw new Error("No Gemini key yet — add your own Gemini API key in Settings ⚙ for great AI images and voices. (Or pick a free provider: Kokoro, Pollinations, or Puter.)"); return k; }
 function getAnalyzerKey(){                          // which key the Analyze step uses
   const own=$("key").value.trim();
   if(keyEnabled("Script") && own) return own;        // visitor opted to use their own key for Analyze (and has one)
