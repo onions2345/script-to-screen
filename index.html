@@ -173,6 +173,12 @@
   details.settings summary{cursor:pointer;font-family:var(--display);font-size:15px;list-style:none}
   details.settings summary::-webkit-details-marker{display:none}
   details.settings summary::before{content:'⚙  ';color:var(--muted)}
+  details.fmt{margin-top:6px}
+  details.fmt summary{cursor:pointer;font-size:12px;color:var(--muted);list-style:none;display:inline-block}
+  details.fmt summary::-webkit-details-marker{display:none}
+  details.fmt summary::before{content:'▸ '}
+  details.fmt[open] summary::before{content:'▾ '}
+  details.fmt summary:hover{color:var(--text)}
   .cast{width:100%;border-collapse:collapse;margin-top:8px;font-size:14px}
   .cast td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
   .cast .prevcell{width:46px;text-align:right}
@@ -227,14 +233,6 @@
     <p class="lede">Paste a script. Gemini works out who speaks each line and casts a voice, reads it aloud, and sketches the visual beats — then stitches the voices into one audio track and makes your video. Runs entirely in your browser.</p>
   </header>
 
-  <!-- API KEY (always visible) -->
-  <div class="card" id="keyCard">
-    <label for="key">Gemini API key</label>
-    <input id="key" type="password" placeholder="Paste your key from aistudio.google.com/apikey" autocomplete="off" />
-    <div class="hint" id="keyHint">No key yet? <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Get a free one from Google AI Studio</a> — sign in with Google, click "Create API key," paste it here. Each visitor uses their own key; keys can't be handed out by a login button.</div>
-    <div class="warn"><strong>Your key stays in this browser only</strong> (saved to localStorage on this device). Never commit it to the repo — GitHub Pages is public. For safety, restrict the key to your Pages URL in Google Cloud Console → Credentials → HTTP referrers.</div>
-  </div>
-
   <!-- SETTINGS MENU (toggled by the gear) -->
   <div class="card hidden" id="settingsCard">
     <h2>Settings</h2>
@@ -248,6 +246,19 @@
       <button id="delBtn" class="ghost">Delete selected</button>
     </div>
     <div class="hint">Saved on <strong>this device, in this browser</strong> — your script, voices and images are kept so you can close the tab and come back. Clearing browser data (or using another device) removes them. <span id="projMsg" style="color:var(--shoot)"></span></div>
+
+    <h3>Your Gemini key</h3>
+    <label for="key">Your Gemini API key — for Gemini voices &amp; images (optional)</label>
+    <input id="key" type="password" placeholder="Paste your key from aistudio.google.com/apikey" autocomplete="off" />
+    <div class="hint" id="keyHint">Analyzing a script is already covered by a shared key, so you can try it without your own. To make voices or images with Gemini, add your own key — or use the free providers below (Kokoro, Pollinations, Puter), which need no key at all. <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Get a free key</a>. Stored in this browser only.</div>
+    <div class="warn"><strong>Your key stays in this browser only</strong> (saved to localStorage on this device). Never commit it to the repo — GitHub Pages is public. For safety, restrict the key to your Pages URL in Google Cloud Console → Credentials → HTTP referrers.</div>
+    <div style="margin-top:10px;font-size:13px">
+      <div style="margin-bottom:5px">Use <strong>my own key</strong> for:</div>
+      <label style="display:inline-flex;gap:6px;align-items:center;margin-right:16px;cursor:pointer"><input type="checkbox" id="useKeyScript" checked style="width:auto;margin:0"> Script&nbsp;Analyzer</label>
+      <label style="display:inline-flex;gap:6px;align-items:center;margin-right:16px;cursor:pointer"><input type="checkbox" id="useKeyAudio" checked style="width:auto;margin:0"> Audio&nbsp;(voices)</label>
+      <label style="display:inline-flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="useKeyImages" checked style="width:auto;margin:0"> Images</label>
+    </div>
+    <div class="hint">Unticking a box means that part <em>won't</em> use your key: the <strong>Analyzer</strong> falls back to the shared key, and <strong>Audio/Images</strong> ask you to pick a free provider instead. The Analyzer also uses the shared key automatically if you haven't entered a key.</div>
 
     <h3>Audio generation</h3>
     <label for="ttsProvider">Voice provider</label>
@@ -313,14 +324,10 @@
       <option value="gemini-3-flash">gemini-3-flash — newest</option>
     </select>
     <div class="hint">The model that reads your script on <em>Analyze</em> — it works out who speaks each line, casts a voice per character, and writes the visual prompts. It runs once (not per line), so it barely touches your quota. Bump it to <strong>Pro</strong> if a messy script gets parsed or cast wrong.</div>
-    <div id="ownAnalyzerKeyWrap" style="display:none;margin-top:6px">
-      <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;cursor:pointer">
-        <input type="checkbox" id="ownAnalyzerKey" style="width:auto;margin:3px 0 0">
-        <span>Use <strong>my own</strong> Gemini key (entered at the top) for the Script Analyzer, instead of the shared built-in key.</span>
-      </label>
-    </div>
 
-    <h3>Video &amp; image generation</h3>
+    <h3>Animation generation</h3>
+
+    <h3>Image generation</h3>
     <div class="row">
       <div>
         <label for="imgProvider">Image provider</label>
@@ -392,7 +399,18 @@
   <div class="card">
     <p class="step">STEP 1</p>
     <h2>Your script</h2>
-    <p class="hint">Any format works — labelled (<code>NARRATOR:</code> / <code>ON SCREEN:</code>) or plain prose. Gemini figures out the structure.</p>
+    <p class="hint">Paste a script in <strong>any format</strong> — a screenplay, labelled dialogue, or plain prose. Gemini works out who's speaking, the on-screen text, and the shots.</p>
+    <details class="fmt">
+      <summary>What can I paste? formats &amp; examples</summary>
+      <div class="hint" style="margin-top:8px;line-height:1.6">
+        <strong>Plain prose / a story</strong> — read as narration; dialogue in quotes is split out to characters.<br>
+        <strong>Who speaks</strong> — start a line with a name and a colon; each name gets its own voice: &nbsp;<code>NARRATOR:</code> <code>REES:</code> <code>DEV:</code><br>
+        <strong>On-screen / system text</strong> — label it for the flat robotic readout: &nbsp;<code>ON SCREEN:</code> <code>SYSTEM:</code><br>
+        <strong>Delivery tone</strong> — add a note in brackets: &nbsp;<code>REES: (whispering) You notice more when you write it down.</code><br>
+        <strong>Screenplay format</strong> works too — scene headings like <code>INT. KITCHEN – NIGHT</code>, action lines (turned into shots), and <code>(V.O.)</code> or <code>(O.S.)</code> after a name.<br>
+        Visuals are added for you (about one every 3–5 lines). If something's parsed wrong, set the Analyzer to <strong>Pro</strong> in Settings ⚙, or fix any line with <strong>✎ Edit</strong> after Analyze.
+      </div>
+    </details>
     <textarea id="script" spellcheck="false"></textarea>
     <div class="btnrow">
       <button id="analyzeBtn" class="primary">Analyze script</button>
@@ -488,23 +506,13 @@ cfgKeys.forEach(k=>{
 });
 cfgKeys.forEach(k=> ["input","change"].forEach(ev=> $(k).addEventListener(ev,()=>localStorage.setItem("s2s_"+k,$(k).value))));
 
-// Script-Analyzer key: persist the "use my own key" checkbox, and reflect whether a shared built-in key is present
-(function(){
-  const cb=$("ownAnalyzerKey");
-  if(cb){
-    if(localStorage.getItem("s2s_ownAnalyzerKey")==="1") cb.checked=true;
-    cb.addEventListener("change", ()=>localStorage.setItem("s2s_ownAnalyzerKey", cb.checked?"1":"0"));
-  }
-})();
-function applyKeyMode(){
-  const shared=!!BUILT_IN_KEY || !!ANALYZER_PROXY;
-  const wrap=$("ownAnalyzerKeyWrap"); if(wrap) wrap.style.display = shared ? "" : "none";
-  if(shared){
-    const lbl=document.querySelector('label[for="key"]'); if(lbl) lbl.textContent="Your Gemini API key — for Gemini voices & images (optional)";
-    const hint=$("keyHint"); if(hint) hint.innerHTML='Analyzing a script is already covered by a shared key, so you can try it without your own. To make <strong>voices or images with Gemini</strong>, add your own key — or use the free providers in Settings (Kokoro, Pollinations, Puter), which need no key at all. <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Get a free key</a>. Stored in this browser only.';
-  }
-}
-applyKeyMode();
+// Persist the three "use my own key for" checkboxes (default ON; only stored once changed)
+["useKeyScript","useKeyAudio","useKeyImages"].forEach(id=>{
+  const cb=$(id); if(!cb) return;
+  const v=localStorage.getItem("s2s_"+id);
+  if(v!==null) cb.checked = (v==="1");
+  cb.addEventListener("change", ()=>localStorage.setItem("s2s_"+id, cb.checked?"1":"0"));
+});
 
 // gear toggles the settings panel; auto-open it for first-time users with no key yet
 $("gearBtn").onclick = ()=> $("settingsCard").classList.toggle("hidden");
@@ -553,11 +561,12 @@ if(!$("script").value) $("script").value = SAMPLE;
 })();
 
 // ---------- helpers ----------
-function getKey(){ const k=$("key").value.trim(); if(!k){ $("key").focus(); throw new Error("Add your Gemini API key at the top first."); } return k; }
+function keyEnabled(feature){ const el=$("useKey"+feature); return el ? el.checked : true; }   // is the user's key allowed for Script | Audio | Images
+function getKey(){ const k=$("key").value.trim(); if(!k){ if(typeof openSettings==="function") openSettings(); $("key").focus(); throw new Error("Add your Gemini API key in Settings ⚙ first."); } return k; }
 function getAnalyzerKey(){                          // which key the Analyze step uses
   const own=$("key").value.trim();
-  if($("ownAnalyzerKey") && $("ownAnalyzerKey").checked) return own || BUILT_IN_KEY;   // user opted to use their own
-  return BUILT_IN_KEY || own;                       // default: shared built-in key, falling back to their own if none is set
+  if(keyEnabled("Script") && own) return own;        // visitor opted to use their own key for Analyze (and has one)
+  return BUILT_IN_KEY || own;                        // else the shared built-in key, falling back to their own if none is set
 }
 
 // ---------- core Gemini call: POSTs to generateContent; uses keyOverride if given, else the user's key ----------
@@ -575,7 +584,7 @@ async function gemini(model, body, keyOverride){
 
 // Analyze request: via the hidden-key Worker if configured (and the user isn't using their own key), else a direct Gemini call.
 async function analyzeGenerate(model, body){
-  const useOwn = $("ownAnalyzerKey") && $("ownAnalyzerKey").checked && $("key").value.trim();
+  const useOwn = keyEnabled("Script") && $("key").value.trim();
   if(ANALYZER_PROXY && !useOwn){
     const res = await fetch(ANALYZER_PROXY, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ model, body }) });
     if(!res.ok){ let d=""; try{ d=(await res.json()).error?.message||""; }catch(_){ try{ d=await res.text(); }catch(__){} } throw new Error("Analyzer "+res.status+": "+(d||res.statusText)); }
@@ -590,6 +599,7 @@ function b64ToBytes(b64){ const bin=atob(b64); const a=new Uint8Array(bin.length
 const IMG_PREFIX="Cinematic film still, atmospheric, no text or words in image. ";
 function blobToDataURL(blob){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(new Error("couldn't read image")); r.readAsDataURL(blob); }); }
 async function genImageGemini(prompt){
+  if(!keyEnabled("Images")) throw new Error("Using your key for images is turned off in Settings ⚙ — turn it on there, or pick a free image provider (Pollinations / Puter).");
   const data=await gemini($("mImg").value.trim(),{
     contents:[{parts:[{text:IMG_PREFIX+prompt}]}],
     generationConfig:{ responseModalities:["IMAGE","TEXT"], imageConfig:{ aspectRatio:"16:9" } }   // match the 16:9 video frame (both resolutions are 16:9); otherwise Gemini returns ~square
@@ -709,8 +719,8 @@ CONSISTENCY (important — this is how recurring people and things stay looking 
 SCRIPT:
 ${script}`;
   try{
-    const viaProxy = !!ANALYZER_PROXY && !($("ownAnalyzerKey") && $("ownAnalyzerKey").checked && $("key").value.trim());
-    const PROXY_BUSY = 'The shared analyzer is busy or unavailable right now. <strong>Wait a few seconds and click Analyze again.</strong><br>If it keeps failing, open <a href="#" onclick="openSettings();return false;">Settings ⚙</a>, paste your own Gemini key at the top, and tick “Use my own Gemini key for the Script Analyzer.”';
+    const viaProxy = !!ANALYZER_PROXY && !(keyEnabled("Script") && $("key").value.trim());
+    const PROXY_BUSY = 'The shared analyzer is busy or unavailable right now. <strong>Wait a few seconds and click Analyze again.</strong><br>If it keeps failing, open <a href="#" onclick="openSettings();return false;">Settings ⚙</a>, paste your own Gemini key, and tick <strong>Script Analyzer</strong> under “Use my own key for.”';
     let data=null, lastErr="";
     for(let attempt=0; attempt<4; attempt++){          // auto-retry a short rate limit instead of failing
       try{
@@ -983,6 +993,7 @@ $("nextImgBtn").onclick = ()=>{
 // To add a provider: write the function, add it to the dispatch in the voices loop,
 // add a dropdown <option>, and (if it has settings) add its keys to cfgKeys.
 async function tts(model, voice, text){
+  if(!keyEnabled("Audio")) throw new Error("Using your key for voices is turned off in Settings ⚙ — turn it on there, or pick a free voice provider (Kokoro / Puter / Pollinations).");
   const body={ contents:[{parts:[{text}]}],
     generationConfig:{ responseModalities:["AUDIO"],
       speechConfig:{ voiceConfig:{ prebuiltVoiceConfig:{ voiceName:voice } } } } };
@@ -1052,6 +1063,7 @@ function gcloudVoice(speaker,isOnscreen){
   return GCLOUD_VOICES[Math.max(0,castSpeakerIdx(speaker)) % GCLOUD_VOICES.length];
 }
 async function googleTTS(speaker,isOnscreen,text){
+  if(!keyEnabled("Audio")) throw new Error("Using your key for voices is turned off in Settings ⚙ — turn it on there, or pick a free voice provider (Kokoro / Puter / Pollinations).");
   const name=gcloudVoice(speaker,isOnscreen);
   const res=await fetch("https://texttospeech.googleapis.com/v1/text:synthesize?key="+encodeURIComponent(getKey()),{
     method:"POST", headers:{"Content-Type":"application/json"},
