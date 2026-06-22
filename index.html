@@ -451,6 +451,16 @@
 const $ = id => document.getElementById(id);
 const API = "https://generativelanguage.googleapis.com/v1beta/models/";
 
+// ── Script Analyzer key config (declared up here so init code can read it) ──
+// BUILT_IN_KEY powers the Script Analyzer for everyone (the cheap, one-call step). PASTE YOUR OWN GEMINI KEY between the quotes to enable it.
+// ⚠️ This file is served publicly on GitHub Pages, so ANYONE can read this key in the page source and use it for ANY Gemini call (incl. expensive ones).
+//    Protect it in Google Cloud Console: restrict to HTTP referrer https://onions2345.github.io/* AND to the "Generative Language API",
+//    and keep it on the FREE tier (no billing) so it can't run up charges. Leave it "" to make every user bring their own key.
+const BUILT_IN_KEY = "";
+// OPTIONAL (recommended): a Cloudflare Worker / PHP URL that keeps the Analyzer key HIDDEN server-side. See worker.js / analyze.php.
+// When set, Analyze calls this URL (which adds the key) instead of putting any key in this page. Leave "" to use BUILT_IN_KEY / the user's key.
+const ANALYZER_PROXY = "https://mvandiermen.com/video-tools/analyze.php";
+
 // Gemini prebuilt TTS voices (subset; all selectable in the dropdowns)
 const VOICES = ["Charon","Kore","Puck","Aoede","Fenrir","Iapetus","Algenib","Zephyr","Leda","Orus","Schedar","Algieba","Despina","Enceladus","Achernar","Alnilam","Sadachbia","Gacrux"];
 
@@ -543,14 +553,6 @@ if(!$("script").value) $("script").value = SAMPLE;
 })();
 
 // ---------- helpers ----------
-// BUILT_IN_KEY powers the Script Analyzer for everyone (the cheap, one-call step). PASTE YOUR OWN GEMINI KEY between the quotes to enable it.
-// ⚠️ This file is served publicly on GitHub Pages, so ANYONE can read this key in the page source and use it for ANY Gemini call (incl. expensive ones).
-//    Protect it in Google Cloud Console: restrict to HTTP referrer https://onions2345.github.io/* AND to the "Generative Language API",
-//    and keep it on the FREE tier (no billing) so it can't run up charges. Leave it "" to make every user bring their own key.
-const BUILT_IN_KEY = "";
-// OPTIONAL (recommended): paste your Cloudflare Worker URL here to keep the Analyzer key HIDDEN server-side. See worker.js.
-// When set, Analyze calls the Worker (which adds the key) instead of putting any key in this page. Leave "" to use BUILT_IN_KEY / the user's key.
-const ANALYZER_PROXY = "https://mvandiermen.com/video-tools/analyze.php";
 function getKey(){ const k=$("key").value.trim(); if(!k){ $("key").focus(); throw new Error("Add your Gemini API key at the top first."); } return k; }
 function getAnalyzerKey(){                          // which key the Analyze step uses
   const own=$("key").value.trim();
