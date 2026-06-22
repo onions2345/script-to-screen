@@ -327,6 +327,49 @@
     <div class="hint">The model that reads your script on <em>Analyze</em> — it works out who speaks each line, casts a voice per character, and writes the visual prompts. It runs once (not per line), so it barely touches your quota. Bump it to <strong>Pro</strong> if a messy script gets parsed or cast wrong.</div>
 
     <h3>Animation generation</h3>
+    <label for="animProvider">Animate shots (moving clips instead of stills)</label>
+    <select id="animProvider">
+      <option value="off" selected>Off — use still images</option>
+      <option value="puter">Puter — popup sign-in, free quota, no key (cheapest, Wan)</option>
+      <option value="fal-ltx">fal.ai · LTX-2 Fast — your own fal key (pay per clip)</option>
+    </select>
+    <div id="animPuterField" class="hidden">
+      <label for="puterVidModel">Puter video model</label>
+      <select id="puterVidModel">
+        <option value="wan-ai/wan2.2-t2v-a14b" selected>Wan 2.2 — cheapest, ~5s</option>
+        <option value="wan-ai/wan2.7-t2v">Wan 2.7 — newer Wan</option>
+        <option value="vidu/vidu-q1">Vidu Q1 — anime-friendly, 1080p</option>
+        <option value="vidu/vidu-2.0">Vidu 2.0</option>
+        <option value="google/veo-3.0-fast">Google Veo 3.0 Fast</option>
+        <option value="google/veo-3.1-fast">Google Veo 3.1 Fast</option>
+        <option value="google/veo-3.1">Google Veo 3.1 — higher quality</option>
+        <option value="sora-2">OpenAI Sora 2 — priciest</option>
+        <option value="__custom__">Custom — type a model id…</option>
+      </select>
+      <input id="puterVidCustom" class="hidden" type="text" placeholder="exact Puter model id, e.g. kling/… , pixverse/… , bytedance/seedance-…" autocomplete="off" />
+      <div class="hint"><strong>No key needed.</strong> A quick <strong>Puter sign-in popup</strong> appears on first use, then you get free credits — Puter's "User-Pays" model means it's free to start, and after the free quota your own Puter account covers usage (cheapest is <strong>Wan</strong>). Want Kling, PixVerse, Seedance, Hailuo and others? Pick <strong>Custom</strong> and paste the id from <a href="https://docs.puter.com/AI/txt2vid/" target="_blank" rel="noopener">Puter's video docs</a>. Clips render one at a time (~10s–2 min each), so animate <strong>per shot</strong> with the <strong>🎬 Animate</strong> button under each visual. Clips aren't auto-stitched into the in-app video yet — download the ones you want.</div>
+    </div>
+    <div id="animField" class="hidden">
+      <label for="falKey">fal.ai API key</label>
+      <input id="falKey" type="password" placeholder="from fal.ai/dashboard/keys" autocomplete="off" />
+      <label for="falVidModel">fal video model</label>
+      <select id="falVidModel">
+        <option value="fal-ai/ltx-2/text-to-video/fast" selected>LTX-2 Fast — cheapest ($0.04/sec @1080p)</option>
+        <option value="fal-ai/ltx-2/text-to-video">LTX-2 Pro — higher quality ($0.06/sec @1080p)</option>
+      </select>
+      <div class="row">
+        <div>
+          <label for="animSecs">Clip length</label>
+          <select id="animSecs"><option value="6" selected>6 seconds</option><option value="8">8 seconds</option><option value="10">10 seconds</option></select>
+        </div>
+        <div>
+          <label for="animRes">Resolution</label>
+          <select id="animRes"><option value="1080p" selected>1080p — $0.04/sec</option><option value="1440p">1440p — $0.08/sec</option></select>
+        </div>
+      </div>
+      <div class="warn"><strong>This costs real money</strong> — billed to <em>your own</em> fal.ai account, about <strong>$0.04/sec</strong> at 1080p, so one 6-second clip ≈ <strong>$0.24</strong> (a 20-shot script ≈ $5). Clips render <strong>one at a time</strong> and take ~10–60s each, so animation is <strong>per-shot, on demand</strong> — use the <strong>🎬 Animate</strong> button under each visual, not a bulk button. Your key is stored only in this browser.</div>
+      <div class="hint">Both are LTX-2 (Lightricks), 16:9 to match the frame, no audio (your own voices carry the sound). <a href="https://fal.ai/dashboard/keys" target="_blank" rel="noopener">Get a fal.ai key</a> (needs billing set up). Clips come back as <strong>.mp4 links per shot</strong> — they're <em>not</em> auto-stitched into the in-app video yet, so download the ones you want and assemble them in a video editor (CapCut, DaVinci, etc.). fal clip links are temporary, so download anything you want to keep.</div>
+    </div>
 
     <h3>Image generation</h3>
     <div class="row">
@@ -427,7 +470,8 @@
     <table class="cast"><tbody id="castBody"></tbody></table>
     <div class="btnrow">
       <button id="voicesBtn" class="amber">Generate voices</button>
-      <button id="imagesBtn" class="primary">Generate visuals</button>
+      <button id="animBtn" class="primary">Generate animation</button>
+      <button id="imagesBtn" class="primary">Generate images</button>
       <button id="stopBtn" class="stop hidden">■ Stop</button>
       <button id="nextTtsBtn" class="amber hidden">↻ Try next TTS</button>
       <button id="nextImgBtn" class="amber hidden">↻ Try next image source</button>
@@ -498,7 +542,7 @@ REES: You notice more when you write it down.
 ON SCREEN: Note. This contradicts the budget you approved on Tuesday.`;
 
 // ---------- config persistence (local only) ----------
-const cfgKeys = ["key","mText","mTts","mImg","ttsProvider","custUrl","custModel","custVoice","custKey","elevenKey","elevenModel","vidMotion","imgProvider","pollModel","pollKey","puterImgModel","custImgUrl","custImgModel","custImgKey"];
+const cfgKeys = ["key","mText","mTts","mImg","ttsProvider","custUrl","custModel","custVoice","custKey","elevenKey","elevenModel","vidMotion","imgProvider","pollModel","pollKey","puterImgModel","custImgUrl","custImgModel","custImgKey","animProvider","falKey","animSecs","animRes","puterVidModel","puterVidCustom","falVidModel"];
 cfgKeys.forEach(k=>{
   const el=$(k), v=localStorage.getItem("s2s_"+k);
   if(v===null) return;
@@ -544,6 +588,19 @@ function syncImgProviderVis(){
 }
 $("imgProvider").addEventListener("change", syncImgProviderVis);
 syncImgProviderVis();
+
+// show the fal.ai key/options only when an animation provider is chosen
+function syncPuterVidCustom(){ $("puterVidCustom").classList.toggle("hidden", $("puterVidModel").value!=="__custom__"); }
+$("puterVidModel").addEventListener("change", syncPuterVidCustom);
+syncPuterVidCustom();
+function syncAnimVis(){
+  const p=$("animProvider").value;
+  $("animField").classList.toggle("hidden", p!=="fal-ltx");
+  $("animPuterField").classList.toggle("hidden", p!=="puter");
+  if(p==="puter") syncPuterVidCustom();
+}
+$("animProvider").addEventListener("change", ()=>{ syncAnimVis(); refreshBeatAnimButtons(); });
+syncAnimVis();
 
 if(!$("script").value) $("script").value = SAMPLE;
 
@@ -1365,16 +1422,52 @@ $("imagesBtn").onclick = async ()=>{
       const url=await genImage(b.prompt||"");
       addBeatImage(b,url); fillImageSlot(b);
     }catch(e){
-      $(b._id).querySelector(".slot").innerHTML=`<div class="style">image failed: ${escapeHtml(e.message)} — click Generate visuals again to retry just this one, or switch image provider in <a href="#" onclick="openSettings();return false;">Settings ⚙</a>.</div>`;
+      $(b._id).querySelector(".slot").innerHTML=`<div class="style">image failed: ${escapeHtml(e.message)} — click Generate images again to retry just this one, or switch image provider in <a href="#" onclick="openSettings();return false;">Settings ⚙</a>.</div>`;
     }
     if(cancelGen) break;
     await new Promise(r=>setTimeout(r,800)); // gentle on the rate limit
   }
   const done=all.filter(b=>b._img).length;
-  st.textContent = cancelGen ? `Stopped — ${done} of ${all.length} drawn. Click Generate visuals to continue.`
-    : (done===all.length ? "Visuals done — all "+done+"." : `Drew ${done} of ${all.length}. Click Generate visuals again to fill the rest, or use Try next image source.`);
+  st.textContent = cancelGen ? `Stopped — ${done} of ${all.length} drawn. Click Generate images to continue.`
+    : (done===all.length ? "Images done — all "+done+"." : `Drew ${done} of ${all.length}. Click Generate images again to fill the rest, or use Try next image source.`);
   $("stopBtn").classList.add("hidden");
   refreshNextImgBtn(done < all.length);
+  btn.disabled=false;
+};
+
+// ---------- STEP 3c: animation (batch) — animates every visual shot via the chosen provider. Confirms first (it costs money/credits). Resumable + Stop. ----------
+$("animBtn").onclick = async ()=>{
+  if(!project) return;
+  const prov=$("animProvider").value, btn=$("animBtn"), st=$("genStatus");
+  if(prov==="off"){ st.innerHTML='Pick an animation source first — open <a href="#" onclick="openSettings();return false;">Settings ⚙</a> → <strong>Animation generation</strong> (Puter is free with a sign-in; fal uses your own key).'; return; }
+  const all=project.beats.filter(b=>b.type==="visual");
+  if(!all.length){ st.textContent="No visual shots to animate."; return; }
+  const todo=all.filter(b=>!b._video);
+  if(!todo.length){ st.textContent="All shots already animated. (Use 🎬 Re-animate on a shot to redo one.)"; return; }
+  let warn;
+  if(prov==="fal-ltx"){ const secs=parseInt($("animSecs").value||"6",10), pro=$("falVidModel").value.indexOf("/fast")<0, base=pro?0.06:0.04, rate=$("animRes").value==="1440p"?base*2:base, each=secs*rate;
+    warn=`Animate ${todo.length} shot(s) with fal (${pro?"LTX-2 Pro":"LTX-2 Fast"})? This bills your own fal account about $${(each*todo.length).toFixed(2)} (~$${each.toFixed(2)} each) and renders one at a time.`; }
+  else { warn=`Animate ${todo.length} shot(s) with Puter? A sign-in popup may appear. This uses your free Puter quota/credits and renders one at a time (~10s–2 min each).`; }
+  if(!confirm(warn)) return;
+  const already=all.length-todo.length;
+  btn.disabled=true; cancelGen=false; $("stopBtn").classList.remove("hidden");
+  for(let i=0;i<todo.length;i++){
+    if(cancelGen) break;
+    const b=todo[i];
+    try{
+      const url=await genVideoForBeat(b, s=>{ st.innerHTML=`<span class="spin"></span>Animating ${i+1} of ${todo.length}${already?` (${already} done)`:""} — ${s}…`; });
+      b._video=url; fillImageSlot(b);
+    }catch(e){
+      if(/stopped/i.test(e.message||"")) break;
+      const slot=$(b._id)&&$(b._id).querySelector(".slot");
+      if(slot) slot.innerHTML=`<div class="style">animation failed: ${escapeHtml(e.message||String(e))} — click 🎬 Animate on this shot to retry, or check <a href="#" onclick="openSettings();return false;">Settings ⚙</a>.</div>`;
+    }
+    if(cancelGen) break;
+  }
+  const done=all.filter(b=>b._video).length;
+  st.textContent = cancelGen ? `Stopped — ${done} of ${all.length} animated. Click Generate animation to continue.`
+    : (done===all.length ? "Animation done — all "+done+" shots." : `Animated ${done} of ${all.length}. Click Generate animation again to fill the rest.`);
+  $("stopBtn").classList.add("hidden");
   btn.disabled=false;
 };
 
@@ -1429,7 +1522,19 @@ function fillImageSlot(b){
   regen.onclick=()=>regenImage(b,regen);
   const up=document.createElement("button"); up.className="ghost regen"; up.type="button"; up.textContent="⬆ Upload";
   up.onclick=()=>uploadBeatImage(b);
-  row.appendChild(regen); row.appendChild(up); slot.appendChild(row);
+  row.appendChild(regen); row.appendChild(up);
+  if($("animProvider").value!=="off"){
+    const anim=document.createElement("button"); anim.className="ghost regen"; anim.type="button";
+    anim.textContent = b._video ? "🎬 Re-animate" : "🎬 Animate";
+    anim.onclick=()=>regenVideo(b,anim); row.appendChild(anim);
+  }
+  slot.appendChild(row);
+  if(b._video){                                                    // a generated clip takes the spotlight
+    const v=document.createElement("video"); v.controls=true; v.src=b._video; v.style.width="100%"; v.style.borderRadius="10px"; v.style.marginTop="6px"; slot.appendChild(v);
+    const dl=document.createElement("div"); dl.className="hint"; dl.style.marginTop="4px";
+    dl.innerHTML='🎬 Animated clip. <a href="'+b._video+'" target="_blank" rel="noopener">Open / download .mp4</a> — fal links are temporary, so save it to keep it. The still below is still used for the in-app slideshow video.';
+    slot.appendChild(dl);
+  }
   if(b._img){ const im=document.createElement("img"); im.src=b._img; slot.appendChild(im); }
   if(b._imgs && b._imgs.length>1){                                  // thumbnail strip: click to pick, × to remove
     const strip=document.createElement("div"); strip.className="variants";
@@ -1498,6 +1603,59 @@ async function regenImage(b,btn){
   try{ const url=await genImage(b.prompt||""); addBeatImage(b,url); fillImageSlot(b); }
   catch(e){ regenFail(b,btn,prev,"image failed: "+escapeHtml(e.message||String(e))+" — or switch image provider in <a href=\"#\" onclick=\"openSettings();return false;\">Settings ⚙</a>."); }
 }
+
+// ---------- Animation: generate a short video clip for one shot via fal.ai (BYOK, paid, async queue). On-demand per beat only. ----------
+async function falVideo(prompt, onStatus){
+  const key=$("falKey").value.trim();
+  if(!key) throw new Error("Add your fal.ai API key in Settings ⚙ (Animation generation) to make clips.");
+  const model=$("falVidModel").value||"fal-ai/ltx-2/text-to-video/fast";
+  const input={ prompt:(IMG_PREFIX+(prompt||"")).trim(), duration:parseInt($("animSecs").value||"6",10), resolution:$("animRes").value||"1080p", fps:25, generate_audio:false };
+  const auth={ "Authorization":"Key "+key };
+  const sub=await fetch("https://queue.fal.run/"+model, { method:"POST", headers:{ ...auth, "Content-Type":"application/json" }, body:JSON.stringify(input) });
+  if(!sub.ok){ let d=""; try{ const j=await sub.json(); d=j.detail||j.error||""; if(typeof d!=="string") d=JSON.stringify(d); }catch(_){ } throw new Error("fal "+sub.status+": "+(d||sub.statusText)); }
+  const job=await sub.json();
+  const statusUrl=job.status_url, respUrl=job.response_url;
+  if(!statusUrl||!respUrl) throw new Error("fal: no queue URLs returned (check the key)");
+  const t0=Date.now();
+  while(true){
+    if(cancelGen) throw new Error("stopped");
+    await new Promise(r=>setTimeout(r,3000));
+    const sr=await fetch(statusUrl,{headers:auth});
+    if(!sr.ok){ let d=""; try{ d=(await sr.json()).detail||""; }catch(_){ } throw new Error("fal status "+sr.status+": "+(d||sr.statusText)); }
+    const st=await sr.json();
+    if(onStatus) onStatus(st.status||"working");
+    if(st.status==="COMPLETED") break;
+    if(st.status==="FAILED"||st.status==="ERROR") throw new Error("fal job failed — try a shorter clip or simpler prompt");
+    if(Date.now()-t0 > 6*60*1000) throw new Error("fal timed out after 6 min");
+  }
+  const rr=await fetch(respUrl,{headers:auth});
+  if(!rr.ok) throw new Error("fal result "+rr.status);
+  const data=await rr.json();
+  const url=data && data.video && data.video.url;
+  if(!url) throw new Error("fal: no video URL in result");
+  return url;
+}
+async function regenVideo(b,btn){
+  const prev=btn.textContent; btn.disabled=true; cancelGen=false;
+  try{
+    const fn = $("animProvider").value==="puter" ? puterVideo : falVideo;
+    const url=await fn(b.prompt||"", s=>{ btn.textContent="🎬 "+s+"…"; });
+    b._video=url; fillImageSlot(b);
+  }catch(e){ regenFail(b,btn,prev,"animation failed: "+escapeHtml(e.message||String(e))+" — check the Animation settings in <a href=\"#\" onclick=\"openSettings();return false;\">Settings ⚙</a>."); }
+}
+// Puter video: free quota via a Puter sign-in popup, no key. Returns a ready <video>; we keep its source URL.
+async function puterVideo(prompt, onStatus){
+  if(!(window.puter && puter.ai && puter.ai.txt2vid)) throw new Error("Puter isn't loaded — check your connection and try again.");
+  if(onStatus) onStatus("rendering");
+  const sel=$("puterVidModel").value;
+  const model = sel==="__custom__" ? ($("puterVidCustom").value.trim()||"wan-ai/wan2.2-t2v-a14b") : (sel||"wan-ai/wan2.2-t2v-a14b");
+  const v=await puter.ai.txt2vid((IMG_PREFIX+(prompt||"")).trim(), { model });
+  const url=(v && v.getAttribute && v.getAttribute("data-source")) || (v && v.src) || (v && v.currentSrc);
+  if(!url) throw new Error("Puter returned no video (you may need to sign in, or you're out of free credits)");
+  return url;
+}
+function genVideoForBeat(b,onStatus){ return ($("animProvider").value==="puter" ? puterVideo : falVideo)(b.prompt||"", onStatus); }
+function refreshBeatAnimButtons(){ if(project && project.beats) project.beats.forEach(b=>{ if(b.type==="visual" && !b._pcm) fillImageSlot(b); }); }
 // single-beat voice generation, using whatever provider/voice is set now (shared by the loop and Regenerate)
 // ---------- Kokoro: high-quality open-source TTS that runs in the browser. Library + model load lazily on FIRST use, then cached. ----------
 // Full Kokoro v1.0 English voice set (20 American + 8 British), interleaved for variety in per-character assignment
