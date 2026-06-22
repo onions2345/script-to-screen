@@ -231,7 +231,7 @@
   <div class="card" id="keyCard">
     <label for="key">Gemini API key</label>
     <input id="key" type="password" placeholder="Paste your key from aistudio.google.com/apikey" autocomplete="off" />
-    <div class="hint">No key yet? <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Get a free one from Google AI Studio</a> — sign in with Google, click "Create API key," paste it here. Each visitor uses their own key; keys can't be handed out by a login button.</div>
+    <div class="hint" id="keyHint">No key yet? <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Get a free one from Google AI Studio</a> — sign in with Google, click "Create API key," paste it here. Each visitor uses their own key; keys can't be handed out by a login button.</div>
     <div class="warn"><strong>Your key stays in this browser only</strong> (saved to localStorage on this device). Never commit it to the repo — GitHub Pages is public. For safety, restrict the key to your Pages URL in Google Cloud Console → Credentials → HTTP referrers.</div>
   </div>
 
@@ -313,6 +313,12 @@
       <option value="gemini-3-flash">gemini-3-flash — newest</option>
     </select>
     <div class="hint">The model that reads your script on <em>Analyze</em> — it works out who speaks each line, casts a voice per character, and writes the visual prompts. It runs once (not per line), so it barely touches your quota. Bump it to <strong>Pro</strong> if a messy script gets parsed or cast wrong.</div>
+    <div id="ownAnalyzerKeyWrap" style="display:none;margin-top:6px">
+      <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;cursor:pointer">
+        <input type="checkbox" id="ownAnalyzerKey" style="width:auto;margin:3px 0 0">
+        <span>Use <strong>my own</strong> Gemini key (entered at the top) for the Script Analyzer, instead of the shared built-in key.</span>
+      </label>
+    </div>
 
     <h3>Video &amp; image generation</h3>
     <div class="row">
@@ -472,6 +478,24 @@ cfgKeys.forEach(k=>{
 });
 cfgKeys.forEach(k=> ["input","change"].forEach(ev=> $(k).addEventListener(ev,()=>localStorage.setItem("s2s_"+k,$(k).value))));
 
+// Script-Analyzer key: persist the "use my own key" checkbox, and reflect whether a shared built-in key is present
+(function(){
+  const cb=$("ownAnalyzerKey");
+  if(cb){
+    if(localStorage.getItem("s2s_ownAnalyzerKey")==="1") cb.checked=true;
+    cb.addEventListener("change", ()=>localStorage.setItem("s2s_ownAnalyzerKey", cb.checked?"1":"0"));
+  }
+})();
+function applyKeyMode(){
+  const shared=!!BUILT_IN_KEY || !!ANALYZER_PROXY;
+  const wrap=$("ownAnalyzerKeyWrap"); if(wrap) wrap.style.display = shared ? "" : "none";
+  if(shared){
+    const lbl=document.querySelector('label[for="key"]'); if(lbl) lbl.textContent="Your Gemini API key — for Gemini voices & images (optional)";
+    const hint=$("keyHint"); if(hint) hint.innerHTML='Analyzing a script is already covered by a shared key, so you can try it without your own. To make <strong>voices or images with Gemini</strong>, add your own key — or use the free providers in Settings (Kokoro, Pollinations, Puter), which need no key at all. <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Get a free key</a>. Stored in this browser only.';
+  }
+}
+applyKeyMode();
+
 // gear toggles the settings panel; auto-open it for first-time users with no key yet
 $("gearBtn").onclick = ()=> $("settingsCard").classList.toggle("hidden");
 function openSettings(){ $("settingsCard").classList.remove("hidden"); $("settingsCard").scrollIntoView({behavior:"smooth",block:"start"}); }
@@ -519,11 +543,25 @@ if(!$("script").value) $("script").value = SAMPLE;
 })();
 
 // ---------- helpers ----------
+// BUILT_IN_KEY powers the Script Analyzer for everyone (the cheap, one-call step). PASTE YOUR OWN GEMINI KEY between the quotes to enable it.
+// ⚠️ This file is served publicly on GitHub Pages, so ANYONE can read this key in the page source and use it for ANY Gemini call (incl. expensive ones).
+//    Protect it in Google Cloud Console: restrict to HTTP referrer https://onions2345.github.io/* AND to the "Generative Language API",
+//    and keep it on the FREE tier (no billing) so it can't run up charges. Leave it "" to make every user bring their own key.
+const BUILT_IN_KEY = "";
+// OPTIONAL (recommended): paste your Cloudflare Worker URL here to keep the Analyzer key HIDDEN server-side. See worker.js.
+// When set, Analyze calls the Worker (which adds the key) instead of putting any key in this page. Leave "" to use BUILT_IN_KEY / the user's key.
+const ANALYZER_PROXY = "https://mvandiermen.com/video-tools/analyze.php";
 function getKey(){ const k=$("key").value.trim(); if(!k){ $("key").focus(); throw new Error("Add your Gemini API key at the top first."); } return k; }
+function getAnalyzerKey(){                          // which key the Analyze step uses
+  const own=$("key").value.trim();
+  if($("ownAnalyzerKey") && $("ownAnalyzerKey").checked) return own || BUILT_IN_KEY;   // user opted to use their own
+  return BUILT_IN_KEY || own;                       // default: shared built-in key, falling back to their own if none is set
+}
 
-// ---------- core Gemini call: POSTs to generateContent with the user's key; throws a readable error ----------
-async function gemini(model, body){
-  const res = await fetch(API+encodeURIComponent(model)+":generateContent?key="+encodeURIComponent(getKey()),{
+// ---------- core Gemini call: POSTs to generateContent; uses keyOverride if given, else the user's key ----------
+async function gemini(model, body, keyOverride){
+  const key = keyOverride || getKey();
+  const res = await fetch(API+encodeURIComponent(model)+":generateContent?key="+encodeURIComponent(key),{
     method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)
   });
   if(!res.ok){
@@ -531,6 +569,17 @@ async function gemini(model, body){
     throw new Error("API "+res.status+": "+(detail||res.statusText));
   }
   return res.json();
+}
+
+// Analyze request: via the hidden-key Worker if configured (and the user isn't using their own key), else a direct Gemini call.
+async function analyzeGenerate(model, body){
+  const useOwn = $("ownAnalyzerKey") && $("ownAnalyzerKey").checked && $("key").value.trim();
+  if(ANALYZER_PROXY && !useOwn){
+    const res = await fetch(ANALYZER_PROXY, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ model, body }) });
+    if(!res.ok){ let d=""; try{ d=(await res.json()).error?.message||""; }catch(_){ try{ d=await res.text(); }catch(__){} } throw new Error("Analyzer "+res.status+": "+(d||res.statusText)); }
+    return res.json();
+  }
+  return gemini(model, body, getAnalyzerKey());
 }
 
 function b64ToBytes(b64){ const bin=atob(b64); const a=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)a[i]=bin.charCodeAt(i); return a; }
@@ -658,10 +707,12 @@ CONSISTENCY (important — this is how recurring people and things stay looking 
 SCRIPT:
 ${script}`;
   try{
+    const viaProxy = !!ANALYZER_PROXY && !($("ownAnalyzerKey") && $("ownAnalyzerKey").checked && $("key").value.trim());
+    const PROXY_BUSY = 'The shared analyzer is busy or unavailable right now. <strong>Wait a few seconds and click Analyze again.</strong><br>If it keeps failing, open <a href="#" onclick="openSettings();return false;">Settings ⚙</a>, paste your own Gemini key at the top, and tick “Use my own Gemini key for the Script Analyzer.”';
     let data=null, lastErr="";
     for(let attempt=0; attempt<4; attempt++){          // auto-retry a short rate limit instead of failing
       try{
-        data = await gemini($("mText").value.trim(), {
+        data = await analyzeGenerate($("mText").value.trim(), {
           contents:[{parts:[{text:prompt}]}],
           generationConfig:{ responseMimeType:"application/json", temperature:0.4 }
         });
@@ -669,20 +720,20 @@ ${script}`;
       }catch(e){
         lastErr = e.message||String(e);
         if(/per day|daily/i.test(lastErr)){
-          st.innerHTML = "Daily Gemini limit reached on this key. Try the <strong>Script Analyzer</strong> model in <a href=\"#\" onclick=\"openSettings();return false;\">Settings ⚙</a>, or come back after midnight Pacific. (Analyze only needs one request, so this usually means the day's free requests are used up across analyze + voices + images.)";
+          st.innerHTML = viaProxy ? PROXY_BUSY : "Daily Gemini limit reached on this key. Try the <strong>Script Analyzer</strong> model in <a href=\"#\" onclick=\"openSettings();return false;\">Settings ⚙</a>, or come back after midnight Pacific. (Analyze only needs one request, so this usually means the day's free requests are used up across analyze + voices + images.)";
           return;
         }
         const transient = /429|rate limit|resource_exhausted|quota|exhaust|overload|temporar|unavailable|try again|timeout|50[0-4]/i.test(lastErr);
         if(!transient){
-          st.innerHTML = "Analyze failed: "+linkify(escapeHtml(lastErr))+"<br>If it mentions the model name, switch the Script Analyzer model in <a href=\"#\" onclick=\"openSettings();return false;\">Settings ⚙</a>.";
+          st.innerHTML = viaProxy ? PROXY_BUSY : "Analyze failed: "+linkify(escapeHtml(lastErr))+"<br>If it mentions the model name, switch the Script Analyzer model in <a href=\"#\" onclick=\"openSettings();return false;\">Settings ⚙</a>.";
           return;
         }
         if(attempt===3){
-          st.innerHTML = "Still rate-limited after a few tries. Wait a minute, then click <strong>Analyze</strong> again.<br>The free tier allows ~20 Gemini requests/min, and that pool is <em>shared</em> with Generate voices &amp; visuals — so heavy generating can briefly block Analyze.";
+          st.innerHTML = viaProxy ? PROXY_BUSY : "Still rate-limited after a few tries. Wait a minute, then click <strong>Analyze</strong> again.<br>The free tier allows ~20 Gemini requests/min, and that pool is <em>shared</em> with Generate voices &amp; visuals — so heavy generating can briefly block Analyze.";
           return;
         }
-        let wait = retrySecs(lastErr) || Math.min(45, 10*(attempt+1));
-        for(let s=wait; s>0; s--){ st.innerHTML=`<span class="spin"></span>Rate limit — waiting ${s}s, then retrying (try ${attempt+2} of 4)…`; await new Promise(r=>setTimeout(r,1000)); }
+        let wait = Math.max(3, retrySecs(lastErr) || Math.min(30, 5*(attempt+1)));   // a few seconds, then retry
+        for(let s=wait; s>0; s--){ st.innerHTML=`<span class="spin"></span>Analyzer busy — trying again in ${s}s (try ${attempt+2} of 4)…`; await new Promise(r=>setTimeout(r,1000)); }
       }
     }
     if(!data) return;
