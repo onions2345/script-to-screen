@@ -356,7 +356,9 @@
       <select id="falVidModel">
         <option value="fal-ai/ltx-2/text-to-video/fast" selected>LTX-2 Fast — cheapest ($0.04/sec @1080p)</option>
         <option value="fal-ai/ltx-2/text-to-video">LTX-2 Pro — higher quality ($0.06/sec @1080p)</option>
+        <option value="__custom__">Custom — any fal model (Kling, Veo, Wan, Hailuo, PixVerse…)</option>
       </select>
+      <input id="falVidCustom" class="hidden" type="text" placeholder="fal model id, e.g. fal-ai/kling-video/v2.5-turbo/pro/text-to-video" autocomplete="off" />
       <div class="row">
         <div>
           <label for="animSecs">Clip length</label>
@@ -368,7 +370,7 @@
         </div>
       </div>
       <div class="warn"><strong>This costs real money</strong> — billed to <em>your own</em> fal.ai account, about <strong>$0.04/sec</strong> at 1080p, so one 6-second clip ≈ <strong>$0.24</strong> (a 20-shot script ≈ $5). Clips render <strong>one at a time</strong> and take ~10–60s each, so animation is <strong>per-shot, on demand</strong> — use the <strong>🎬 Animate</strong> button under each visual, not a bulk button. Your key is stored only in this browser.</div>
-      <div class="hint">Both are LTX-2 (Lightricks), 16:9 to match the frame, no audio (your own voices carry the sound). <a href="https://fal.ai/dashboard/keys" target="_blank" rel="noopener">Get a fal.ai key</a> (needs billing set up). Clips come back as <strong>.mp4 links per shot</strong> — they're <em>not</em> auto-stitched into the in-app video yet, so download the ones you want and assemble them in a video editor (CapCut, DaVinci, etc.). fal clip links are temporary, so download anything you want to keep.</div>
+      <div class="hint">LTX-2 (Lightricks) is cheapest and uses the length/resolution above. <strong>Custom</strong> lets you run <em>any</em> fal video model — paste an id from the <a href="https://fal.ai/models?categories=text-to-video" target="_blank" rel="noopener">fal model gallery</a> (Kling, Veo, Wan, Hailuo, PixVerse, Seedance…); it sends just the prompt and uses that model's defaults, and cost depends on the model. <a href="https://fal.ai/dashboard/keys" target="_blank" rel="noopener">Get a fal.ai key</a> (needs billing). Clips come back as <strong>.mp4 links per shot</strong> — not auto-stitched into the in-app video yet, so download what you want (fal links are temporary).</div>
     </div>
 
     <h3>Image generation</h3>
@@ -475,6 +477,7 @@
       <button id="stopBtn" class="stop hidden">■ Stop</button>
       <button id="nextTtsBtn" class="amber hidden">↻ Try next TTS</button>
       <button id="nextImgBtn" class="amber hidden">↻ Try next image source</button>
+      <button id="nextAnimBtn" class="amber hidden">↻ Try next source</button>
       <button id="downloadBtn" class="ghost" disabled>Download WAV (lossless)</button>
       <button id="downloadMp3Btn" class="ghost" disabled>Download MP3 (small)</button>
       <button id="exportBtn" class="ghost" disabled>Export storyboard (HTML)</button>
@@ -542,7 +545,7 @@ REES: You notice more when you write it down.
 ON SCREEN: Note. This contradicts the budget you approved on Tuesday.`;
 
 // ---------- config persistence (local only) ----------
-const cfgKeys = ["key","mText","mTts","mImg","ttsProvider","custUrl","custModel","custVoice","custKey","elevenKey","elevenModel","vidMotion","imgProvider","pollModel","pollKey","puterImgModel","custImgUrl","custImgModel","custImgKey","animProvider","falKey","animSecs","animRes","puterVidModel","puterVidCustom","falVidModel"];
+const cfgKeys = ["key","mText","mTts","mImg","ttsProvider","custUrl","custModel","custVoice","custKey","elevenKey","elevenModel","vidMotion","imgProvider","pollModel","pollKey","puterImgModel","custImgUrl","custImgModel","custImgKey","animProvider","falKey","animSecs","animRes","puterVidModel","puterVidCustom","falVidModel","falVidCustom"];
 cfgKeys.forEach(k=>{
   const el=$(k), v=localStorage.getItem("s2s_"+k);
   if(v===null) return;
@@ -593,11 +596,16 @@ syncImgProviderVis();
 function syncPuterVidCustom(){ $("puterVidCustom").classList.toggle("hidden", $("puterVidModel").value!=="__custom__"); }
 $("puterVidModel").addEventListener("change", syncPuterVidCustom);
 syncPuterVidCustom();
+function syncFalVidCustom(){ $("falVidCustom").classList.toggle("hidden", $("falVidModel").value!=="__custom__"); }
+$("falVidModel").addEventListener("change", syncFalVidCustom);
+syncFalVidCustom();
 function syncAnimVis(){
   const p=$("animProvider").value;
+  $("nextAnimBtn").classList.add("hidden");
   $("animField").classList.toggle("hidden", p!=="fal-ltx");
   $("animPuterField").classList.toggle("hidden", p!=="puter");
   if(p==="puter") syncPuterVidCustom();
+  if(p==="fal-ltx") syncFalVidCustom();
 }
 $("animProvider").addEventListener("change", ()=>{ syncAnimVis(); refreshBeatAnimButtons(); });
 syncAnimVis();
@@ -1044,6 +1052,33 @@ $("nextImgBtn").onclick = ()=>{
   $("imagesBtn").click();   // resumes — only the missing visuals, now with the new provider
 };
 
+// animation failover — cycle to the next usable animation provider (skip Off, skip fal without a key)
+function nextAnimProviderIndex(){
+  const opts=[...$("animProvider").options], n=opts.length, i=$("animProvider").selectedIndex;
+  for(let step=1; step<=n; step++){
+    const cand=opts[(i+step)%n].value;
+    if(cand==="off") continue;
+    if(cand==="fal-ltx" && !($("falKey").value||"").trim()) continue;   // skip fal if no key entered
+    return (i+step)%n;
+  }
+  return i;   // nothing else usable
+}
+function refreshNextAnimBtn(incomplete){
+  const b=$("nextAnimBtn"); if(!b) return;
+  const i=$("animProvider").selectedIndex, idx=nextAnimProviderIndex();
+  if(!incomplete || idx===i){ b.classList.add("hidden"); return; }
+  const opts=[...$("animProvider").options];
+  b.textContent="↻ Try next source — "+opts[idx].textContent.split(" — ")[0].trim();
+  b.classList.remove("hidden");
+}
+$("nextAnimBtn").onclick = ()=>{
+  const sel=$("animProvider"); sel.selectedIndex=nextAnimProviderIndex();
+  localStorage.setItem("s2s_animProvider", sel.value);
+  syncAnimVis(); refreshBeatAnimButtons();
+  $("nextAnimBtn").classList.add("hidden");
+  $("animBtn").click();   // re-run; fills only the shots still missing a clip, with the new provider
+};
+
 // ======================= TTS PROVIDERS =======================
 // Each provider is one async function. Gemini's tts() returns {pcm, rate} directly;
 // every other provider gets some encoded audio (MP3/WebM/etc.) and runs it through
@@ -1445,12 +1480,16 @@ $("animBtn").onclick = async ()=>{
   const todo=all.filter(b=>!b._video);
   if(!todo.length){ st.textContent="All shots already animated. (Use 🎬 Re-animate on a shot to redo one.)"; return; }
   let warn;
-  if(prov==="fal-ltx"){ const secs=parseInt($("animSecs").value||"6",10), pro=$("falVidModel").value.indexOf("/fast")<0, base=pro?0.06:0.04, rate=$("animRes").value==="1440p"?base*2:base, each=secs*rate;
-    warn=`Animate ${todo.length} shot(s) with fal (${pro?"LTX-2 Pro":"LTX-2 Fast"})? This bills your own fal account about $${(each*todo.length).toFixed(2)} (~$${each.toFixed(2)} each) and renders one at a time.`; }
+  if(prov==="fal-ltx"){
+    const mdl=$("falVidModel").value==="__custom__" ? ($("falVidCustom").value.trim()||"custom") : $("falVidModel").value;
+    if(/ltx-2/.test(mdl)){ const secs=parseInt($("animSecs").value||"6",10), pro=mdl.indexOf("/fast")<0, base=pro?0.06:0.04, rate=$("animRes").value==="1440p"?base*2:base, each=secs*rate;
+      warn=`Animate ${todo.length} shot(s) with fal (${pro?"LTX-2 Pro":"LTX-2 Fast"})? This bills your own fal account about $${(each*todo.length).toFixed(2)} (~$${each.toFixed(2)} each) and renders one at a time.`; }
+    else { warn=`Animate ${todo.length} shot(s) with fal model "${mdl}"? This bills your own fal account (cost depends on the model — check its fal page) and renders one at a time.`; }
+  }
   else { warn=`Animate ${todo.length} shot(s) with Puter? A sign-in popup may appear. This uses your free Puter quota/credits and renders one at a time (~10s–2 min each).`; }
   if(!confirm(warn)) return;
   const already=all.length-todo.length;
-  btn.disabled=true; cancelGen=false; $("stopBtn").classList.remove("hidden");
+  btn.disabled=true; cancelGen=false; $("stopBtn").classList.remove("hidden"); $("nextAnimBtn").classList.add("hidden");
   for(let i=0;i<todo.length;i++){
     if(cancelGen) break;
     const b=todo[i];
@@ -1466,8 +1505,9 @@ $("animBtn").onclick = async ()=>{
   }
   const done=all.filter(b=>b._video).length;
   st.textContent = cancelGen ? `Stopped — ${done} of ${all.length} animated. Click Generate animation to continue.`
-    : (done===all.length ? "Animation done — all "+done+" shots." : `Animated ${done} of ${all.length}. Click Generate animation again to fill the rest.`);
+    : (done===all.length ? "Animation done — all "+done+" shots." : `Animated ${done} of ${all.length}. Click Generate animation again to fill the rest, or use Try next source.`);
   $("stopBtn").classList.add("hidden");
+  refreshNextAnimBtn(done < all.length);
   btn.disabled=false;
 };
 
@@ -1608,8 +1648,13 @@ async function regenImage(b,btn){
 async function falVideo(prompt, onStatus){
   const key=$("falKey").value.trim();
   if(!key) throw new Error("Add your fal.ai API key in Settings ⚙ (Animation generation) to make clips.");
-  const model=$("falVidModel").value||"fal-ai/ltx-2/text-to-video/fast";
-  const input={ prompt:(IMG_PREFIX+(prompt||"")).trim(), duration:parseInt($("animSecs").value||"6",10), resolution:$("animRes").value||"1080p", fps:25, generate_audio:false };
+  const sel=$("falVidModel").value;
+  const model = sel==="__custom__" ? ($("falVidCustom").value.trim()||"fal-ai/ltx-2/text-to-video/fast") : (sel||"fal-ai/ltx-2/text-to-video/fast");
+  const promptText=(IMG_PREFIX+(prompt||"")).trim();
+  // LTX-2 models take our length/resolution controls; any other fal model just gets the prompt + its own defaults.
+  const input = /ltx-2/.test(model)
+    ? { prompt:promptText, duration:parseInt($("animSecs").value||"6",10), resolution:$("animRes").value||"1080p", fps:25, generate_audio:false }
+    : { prompt:promptText };
   const auth={ "Authorization":"Key "+key };
   const sub=await fetch("https://queue.fal.run/"+model, { method:"POST", headers:{ ...auth, "Content-Type":"application/json" }, body:JSON.stringify(input) });
   if(!sub.ok){ let d=""; try{ const j=await sub.json(); d=j.detail||j.error||""; if(typeof d!=="string") d=JSON.stringify(d); }catch(_){ } throw new Error("fal "+sub.status+": "+(d||sub.statusText)); }
