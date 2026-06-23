@@ -1340,6 +1340,19 @@ $("exportBtn").onclick = async ()=>{
 // drawAt()/drawSeg() apply the Ken Burns zoom/pan and crossfade (pure canvas, no API).
 // The render loop and audio scheduling share one clock (actx.currentTime) so motion stays
 // in sync with the voices. Output is WebM; some sites need it re-wrapped to MP4 elsewhere.
+// Does this visual shot render as its clip (vs its still)? Defaults to the clip when one exists.
+function shotUsesClip(b){ return !!b._video && b._renderMode!=="image"; }
+// Fetch a clip into a blob -> object URL (same-origin, so it won't taint the canvas) and prepare a muted <video>. Returns null on failure (render falls back to the still).
+async function loadClipVideo(url, bag){
+  try{
+    const r=await fetch(url); if(!r.ok) throw new Error("fetch "+r.status);
+    const blob=await r.blob(); const obj=URL.createObjectURL(blob); bag.push(obj);
+    const v=document.createElement("video"); v.muted=true; v.playsInline=true; v.preload="auto"; v.crossOrigin="anonymous"; v.src=obj;
+    await new Promise((res,rej)=>{ let done=false; const ok=()=>{ if(!done){ done=true; res(); } }; v.onloadeddata=ok; v.oncanplaythrough=ok; v.onerror=()=>{ if(!done){ done=true; rej(new Error("decode")); } }; setTimeout(ok,15000); });
+    return v;
+  }catch(_){ return null; }
+}
+
 $("videoBtn").onclick = async ()=>{
   if(!project) return;
   if(!project.beats.some(b=>(b.type==="line"||b.type==="onscreen")&&b._pcm)){
@@ -1359,21 +1372,29 @@ $("videoBtn").onclick = async ()=>{
   const dest=actx.createMediaStreamDestination(); gain.connect(dest);        // and feed it into the video
 
   let rec=null, running=true;          // declared out here so the catch/finally below can reach them
+  const objUrls=[];                     // blob URLs for clips, revoked in finally
   try{
   const rate = (pcmRate && isFinite(pcmRate) && pcmRate>0) ? pcmRate : 24000;   // guard a missing/bad sample rate
   // Timeline: title card, a held frame for each visual beat, the audio for each spoken beat.
-  let cur=null; const segs=[{img:null,title:(project.title||""),audio:null,dur:2.0}];
+  let cur=null, curClip=null; const segs=[{img:null,clipUrl:null,title:(project.title||""),audio:null,dur:2.0}];
   for(const b of project.beats){
-    if(b.type==="visual"){ if(b._img) cur=b._img; segs.push({img:cur,audio:null,dur:HOLD}); }
+    if(b.type==="visual"){ cur = b._img || cur; curClip = shotUsesClip(b) ? b._video : null; segs.push({img:cur,clipUrl:curClip,audio:null,dur:HOLD}); }
     else if(b._pcm && b._pcm.length>=2){
       const n=b._pcm.length>>1;                                  // # of Int16 samples
       const dv=new DataView(b._pcm.buffer, b._pcm.byteOffset, n*2);   // DataView -> no byte-alignment requirement
       const buf=actx.createBuffer(1, n, rate); const ch=buf.getChannelData(0);
       for(let i=0;i<n;i++) ch[i]=dv.getInt16(i*2,true)/32768;
-      segs.push({img:cur,audio:buf,dur:buf.duration});
+      segs.push({img:cur,clipUrl:curClip,audio:buf,dur:buf.duration});
     }
   }
   for(const s of segs) if(s.img) await loadImg(s.img);
+  // Load any animation clips (as blobs, so drawing them won't taint the canvas). Failures fall back to the still.
+  const clipCache={};
+  const clipUrls=[...new Set(segs.map(s=>s.clipUrl).filter(Boolean))];
+  if(clipUrls.length){
+    for(let i=0;i<clipUrls.length;i++){ st.innerHTML='<span class="spin"></span>Loading animation clip '+(i+1)+' of '+clipUrls.length+'…'; clipCache[clipUrls[i]]=await loadClipVideo(clipUrls[i], objUrls); }
+  }
+  segs.forEach(s=>{ s.vid = s.clipUrl ? (clipCache[s.clipUrl]||null) : null; });
 
   // ----- Motion (Ken Burns zoom/pan + crossfade) — pure canvas, no API/credits -----
   const motion = ($("vidMotion") && $("vidMotion").value) || "kenburns";
@@ -1388,7 +1409,12 @@ $("videoBtn").onclick = async ()=>{
 
   function drawSeg(s, now, alpha){
     cx.globalAlpha = alpha;
-    if(s.img && imgs[s.img] && imgs[s.img].width>0 && imgs[s.img].height>0){
+    const v=s.vid;
+    if(v && v.readyState>=2 && v.videoWidth>0){                    // a ready animation clip — draw its current frame, cover-fit
+      const base=Math.max(W/v.videoWidth, H/v.videoHeight);
+      const w=v.videoWidth*base, h=v.videoHeight*base;
+      if(isFinite(w)&&isFinite(h)&&w>0&&h>0) cx.drawImage(v,(W-w)/2,(H-h)/2,w,h);
+    } else if(s.img && imgs[s.img] && imgs[s.img].width>0 && imgs[s.img].height>0){
       const im=imgs[s.img];
       const p = Math.max(0, Math.min(1,(now - s.start)/Math.max(0.001,s.dur)));
       const base = s.kb ? Math.max(W/im.width,H/im.height) : Math.min(W/im.width,H/im.height); // cover for KB, contain otherwise
@@ -1401,10 +1427,17 @@ $("videoBtn").onclick = async ()=>{
     if(s.title){ cx.fillStyle="#e7e9f2"; cx.textAlign="center"; cx.font="600 54px system-ui,-apple-system,sans-serif"; cx.fillText(s.title,W/2,H/2); }
     cx.globalAlpha = 1;
   }
+  let activeVid=null;                                              // the clip currently playing (restarts at each shot boundary)
   function drawAt(now){
     cx.fillStyle="#0b0e16"; cx.fillRect(0,0,W,H);
     let s=segs[0];
     for(const g of segs){ if(now>=g.start && now<g.end){ s=g; break; } if(now>=g.end) s=g; }
+    const want = (s && s.vid && s.vid.readyState>=2) ? s.vid : null;   // play this shot's clip while it's on screen
+    if(want!==activeVid){
+      if(activeVid){ try{ activeVid.pause(); }catch(_){ } }
+      activeVid=want;
+      if(activeVid){ try{ activeVid.currentTime=0; }catch(_){ } activeVid.play().catch(()=>{}); }
+    }
     drawSeg(s, now, 1);
     const next=segs[s.idx+1], left=s.end-now;     // crossfade into the next shot
     if(XF>0 && next && left<XF){ drawSeg(next, next.start, 1-(left/XF)); }
@@ -1436,6 +1469,7 @@ $("videoBtn").onclick = async ()=>{
     st.textContent="Video render failed: "+((err&&err.message)||err)+". If you regenerated audio or images, try generating those again; or set Motion to None in Settings ⚙ and retry.";
   }finally{
     canvas.classList.add("hidden"); try{actx.close()}catch(_){}
+    objUrls.forEach(u=>{ try{ URL.revokeObjectURL(u); }catch(_){ } });
     btn.disabled=false;
   }
 };
@@ -1569,10 +1603,22 @@ function fillImageSlot(b){
     anim.onclick=()=>regenVideo(b,anim); row.appendChild(anim);
   }
   slot.appendChild(row);
-  if(b._video){                                                    // a generated clip takes the spotlight
+  if(b._video){                                                    // a generated clip
     const v=document.createElement("video"); v.controls=true; v.src=b._video; v.style.width="100%"; v.style.borderRadius="10px"; v.style.marginTop="6px"; slot.appendChild(v);
+    if(b._img){                                                    // both exist → let the user choose what the rendered video uses for this shot
+      const mode = b._renderMode==="image" ? "image" : "video";    // default to the clip when one exists
+      const tog=document.createElement("div"); tog.style.cssText="margin-top:6px;font-size:12px;display:flex;gap:6px;align-items:center;flex-wrap:wrap";
+      const lbl=document.createElement("span"); lbl.textContent="In the rendered video:"; lbl.style.color="var(--muted)"; tog.appendChild(lbl);
+      [["video","🎬 Animation"],["image","🖼 Still"]].forEach(([m,txt])=>{
+        const bt=document.createElement("button"); bt.type="button"; bt.textContent=txt;
+        bt.style.cssText="padding:3px 10px;border-radius:999px;cursor:pointer;font-size:12px;border:1px solid "+(mode===m?"var(--shoot)":"var(--line)")+";"+(mode===m?"background:var(--shoot);color:#06210f":"background:transparent;color:var(--text)");
+        bt.onclick=()=>{ b._renderMode=m; fillImageSlot(b); };
+        tog.appendChild(bt);
+      });
+      slot.appendChild(tog);
+    }
     const dl=document.createElement("div"); dl.className="hint"; dl.style.marginTop="4px";
-    dl.innerHTML='🎬 Animated clip. <a href="'+b._video+'" target="_blank" rel="noopener">Open / download .mp4</a> — fal links are temporary, so save it to keep it. The still below is still used for the in-app slideshow video.';
+    dl.innerHTML='🎬 Animated clip — <a href="'+b._video+'" target="_blank" rel="noopener">open / download .mp4</a> (links are temporary, so save it to keep it). '+(b._img?'Use the toggle above to choose <strong>Animation</strong> or <strong>Still</strong> for this shot in <strong>Render video</strong>.':'<strong>Render video</strong> will use this clip for this shot.');
     slot.appendChild(dl);
   }
   if(b._img){ const im=document.createElement("img"); im.src=b._img; slot.appendChild(im); }
