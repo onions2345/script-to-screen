@@ -264,17 +264,17 @@
     <h3>Audio generation</h3>
     <label for="ttsProvider">Voice provider</label>
     <select id="ttsProvider">
-      <option value="gemini" selected>Gemini API — your key &amp; quota (your cast voices)</option>
-      <option value="google-cloud">Google Cloud TTS — your Google key, separate quota (Neural2)</option>
-      <option value="elevenlabs">ElevenLabs — your own key (top quality, free tier)</option>
-      <option value="streamelements">StreamElements — free, no key, no sign-in (Brian &amp; friends)</option>
-      <option value="puter-gemini">Puter · Gemini voices — free, no key</option>
+      <option value="puter-gemini" selected>Puter · Gemini voices — free, no key (keeps your cast voices)</option>
       <option value="puter-openai">Puter · OpenAI voices — free, no key</option>
       <option value="puter-polly">Puter · Amazon Polly neural — free, no key</option>
       <option value="puter-xai">Puter · Grok (xAI), expressive — free, no key</option>
       <option value="puter-eleven">Puter · ElevenLabs (one voice) — free, no key</option>
-      <option value="custom">Custom / OpenAI-compatible endpoint — your server, Pollinations, etc.</option>
       <option value="kokoro">Kokoro (in your browser) — free, no key, ~80 MB one-time download</option>
+      <option value="gemini">Gemini API — your key &amp; quota (your cast voices)</option>
+      <option value="google-cloud">Google Cloud TTS — your Google key, separate quota (Neural2)</option>
+      <option value="elevenlabs">ElevenLabs — your own key (top quality, free tier)</option>
+      <option value="custom">Custom / OpenAI-compatible endpoint — your server, Pollinations, etc.</option>
+      <option value="streamelements">StreamElements — free, no key (legacy, often offline)</option>
       <option value="webspeech">Browser voice (your device) — no key, experimental capture</option>
     </select>
     <div id="ttsModelField">
@@ -378,9 +378,9 @@
       <div>
         <label for="imgProvider">Image provider</label>
         <select id="imgProvider">
-          <option value="gemini" selected>Gemini API — your key &amp; quota</option>
-          <option value="pollinations">Pollinations — free, no key (Flux)</option>
-          <option value="puter">Puter — free, no key (Flux / GPT Image / etc.)</option>
+          <option value="pollinations" selected>Pollinations — free, no key, no sign-in (Flux)</option>
+          <option value="puter">Puter — free, no key, quick sign-in (Flux / GPT Image / etc.)</option>
+          <option value="gemini">Gemini API — your key &amp; quota</option>
           <option value="custom-img">Custom / OpenAI-compatible image endpoint</option>
         </select>
       </div>
