@@ -329,10 +329,24 @@
     <h3>Animation generation</h3>
     <label for="animProvider">Animate shots (moving clips instead of stills)</label>
     <select id="animProvider">
-      <option value="off" selected>Off — use still images</option>
+      <option value="pollinations" selected>Pollinations — your Pollinations key (Wan / Veo / Seedance)</option>
       <option value="puter">Puter — popup sign-in, free quota, no key (cheapest, Wan)</option>
       <option value="fal-ltx">fal.ai · LTX-2 Fast — your own fal key (pay per clip)</option>
+      <option value="off">Off — use still images</option>
     </select>
+    <div id="animPollField" class="hidden">
+      <label for="pollVidKey">Pollinations API key</label>
+      <input id="pollVidKey" type="password" placeholder="from enter.pollinations.ai (new accounts get free Pollen credits)" autocomplete="off" />
+      <label for="pollVidModel">Pollinations video model</label>
+      <select id="pollVidModel">
+        <option value="wan" selected>Wan — cheapest</option>
+        <option value="wan-pro-1080p">Wan Pro 1080p — higher res</option>
+        <option value="veo">Veo</option>
+        <option value="seedance">Seedance</option>
+      </select>
+      <div class="warn"><strong>Needs a Pollinations key &amp; Pollen credits</strong> (not no-key). Make a free account at <a href="https://enter.pollinations.ai" target="_blank" rel="noopener">enter.pollinations.ai</a> — new accounts get some <strong>free Pollen</strong> to start, then it's pay-as-you-go ($1 ≈ 1 Pollen) from your own balance. Renders one clip at a time. Your key is stored only in this browser.</div>
+      <div class="hint">Video is in <em>alpha</em> on Pollinations. If a model id is rejected, check <a href="https://gen.pollinations.ai/v1/models" target="_blank" rel="noopener">the model list</a>. Clips are per-shot — make them with the <strong>🎬 Animate</strong> button under each visual; they aren't auto-stitched, so download what you want.</div>
+    </div>
     <div id="animPuterField" class="hidden">
       <label for="puterVidModel">Puter video model</label>
       <select id="puterVidModel">
@@ -380,9 +394,46 @@
         <select id="imgProvider">
           <option value="pollinations" selected>Pollinations — free, no key, no sign-in (Flux)</option>
           <option value="puter">Puter — free, no key, quick sign-in (Flux / GPT Image / etc.)</option>
+          <option value="craiyon">Craiyon — free, no key (via your proxy; dated &amp; slower)</option>
           <option value="gemini">Gemini API — your key &amp; quota</option>
+          <option value="prodia">Prodia — your Prodia key (FLUX, fast)</option>
+          <option value="together">Together AI — your key (FLUX, free model available)</option>
           <option value="custom-img">Custom / OpenAI-compatible image endpoint</option>
         </select>
+      </div>
+      <div id="togetherImgField" class="hidden">
+        <label for="togetherKey">Together API key</label>
+        <input id="togetherKey" type="password" placeholder="from api.together.xyz (free tier available)" autocomplete="off" />
+        <label for="togetherModel">Together model</label>
+        <select id="togetherModel">
+          <option value="black-forest-labs/FLUX.1-schnell-Free" selected>FLUX.1 schnell (Free)</option>
+          <option value="black-forest-labs/FLUX.1-schnell">FLUX.1 schnell (Turbo, paid)</option>
+          <option value="black-forest-labs/FLUX.1.1-pro">FLUX 1.1 Pro (paid)</option>
+          <option value="black-forest-labs/FLUX.1-dev">FLUX.1 dev (paid)</option>
+        </select>
+        <div class="hint">Get a key at <a href="https://api.together.xyz/settings/api-keys" target="_blank" rel="noopener">api.together.xyz</a>. The <strong>FLUX.1 schnell (Free)</strong> model is free (rate-limited); the others bill your Together account. Images come back as base64 and are stored as a data URL. Your key stays in this browser. <em>If you get a CORS/network error, tell me and I'll route it through your proxy like Craiyon.</em></div>
+      </div>
+      <div id="prodiaImgField" class="hidden">
+        <label for="prodiaKey">Prodia API token</label>
+        <input id="prodiaKey" type="password" placeholder="from app.prodia.com/api (Bearer token)" autocomplete="off" />
+        <label for="prodiaModel">Prodia model</label>
+        <select id="prodiaModel">
+          <option value="inference.flux.schnell.txt2img.v2" selected>FLUX.1 schnell — default</option>
+          <option value="inference.flux-fast.schnell.txt2img.v2">FLUX schnell (fast, fixed res)</option>
+          <option value="inference.flux-2.pro.txt2img.v1">FLUX.2 Pro — higher quality</option>
+          <option value="inference.flux-kontext.pro.txt2img.v1">FLUX Kontext Pro</option>
+        </select>
+        <div class="hint">Needs a <strong>Prodia account/token</strong> from <a href="https://app.prodia.com/api" target="_blank" rel="noopener">app.prodia.com/api</a> (the v2 API may require a paid Pro plan — their free tier is unclear). The image comes back directly and is stored as a data URL. Your token stays in this browser. <em>If you get a CORS/network error, tell me and I'll route it through your proxy like Craiyon.</em></div>
+      </div>
+      <div id="craiyonImgField" class="hidden">
+        <label for="craiyonModel">Craiyon style</label>
+        <select id="craiyonModel">
+          <option value="none" selected>Automatic</option>
+          <option value="art">Art</option>
+          <option value="drawing">Drawing</option>
+          <option value="photo">Photo</option>
+        </select>
+        <div class="hint">Routed through your server proxy (<code>craiyon.php</code> next to <code>analyze.php</code>) because Craiyon has no browser API. It's <strong>free, no key</strong>, but the quality is dated (DALL·E-mini era) and a generation can take <strong>30–60s</strong>. The proxy returns one image per shot as a data URL.</div>
       </div>
       <div id="mImgField">
         <label for="mImg">Gemini image model</label>
@@ -472,12 +523,10 @@
     <table class="cast"><tbody id="castBody"></tbody></table>
     <div class="btnrow">
       <button id="voicesBtn" class="amber">Generate voices</button>
-      <button id="animBtn" class="primary">Generate animation</button>
       <button id="imagesBtn" class="primary">Generate images</button>
       <button id="stopBtn" class="stop hidden">■ Stop</button>
       <button id="nextTtsBtn" class="amber hidden">↻ Try next TTS</button>
       <button id="nextImgBtn" class="amber hidden">↻ Try next image source</button>
-      <button id="nextAnimBtn" class="amber hidden">↻ Try next source</button>
       <button id="downloadBtn" class="ghost" disabled>Download WAV (lossless)</button>
       <button id="downloadMp3Btn" class="ghost" disabled>Download MP3 (small)</button>
       <button id="exportBtn" class="ghost" disabled>Export storyboard (HTML)</button>
@@ -526,6 +575,7 @@ const BUILT_IN_KEY = "";
 // OPTIONAL (recommended): a Cloudflare Worker / PHP URL that keeps the Analyzer key HIDDEN server-side. See worker.js / analyze.php.
 // When set, Analyze calls this URL (which adds the key) instead of putting any key in this page. Leave "" to use BUILT_IN_KEY / the user's key.
 const ANALYZER_PROXY = "https://mvandiermen.com/video-tools/analyze.php";
+const CRAIYON_PROXY  = "https://mvandiermen.com/video-tools/craiyon.php";   // server-side Craiyon (avoids CORS; returns a data URL)
 
 // Gemini prebuilt TTS voices (subset; all selectable in the dropdowns)
 const VOICES = ["Charon","Kore","Puck","Aoede","Fenrir","Iapetus","Algenib","Zephyr","Leda","Orus","Schedar","Algieba","Despina","Enceladus","Achernar","Alnilam","Sadachbia","Gacrux"];
@@ -545,7 +595,7 @@ REES: You notice more when you write it down.
 ON SCREEN: Note. This contradicts the budget you approved on Tuesday.`;
 
 // ---------- config persistence (local only) ----------
-const cfgKeys = ["key","mText","mTts","mImg","ttsProvider","custUrl","custModel","custVoice","custKey","elevenKey","elevenModel","vidMotion","imgProvider","pollModel","pollKey","puterImgModel","custImgUrl","custImgModel","custImgKey","animProvider","falKey","animSecs","animRes","puterVidModel","puterVidCustom","falVidModel","falVidCustom"];
+const cfgKeys = ["key","mText","mTts","mImg","ttsProvider","custUrl","custModel","custVoice","custKey","elevenKey","elevenModel","vidMotion","imgProvider","pollModel","pollKey","puterImgModel","craiyonModel","prodiaKey","prodiaModel","togetherKey","togetherModel","custImgUrl","custImgModel","custImgKey","animProvider","falKey","animSecs","animRes","puterVidModel","puterVidCustom","falVidModel","falVidCustom","pollVidKey","pollVidModel"];
 cfgKeys.forEach(k=>{
   const el=$(k), v=localStorage.getItem("s2s_"+k);
   if(v===null) return;
@@ -587,6 +637,9 @@ function syncImgProviderVis(){
   $("pollImgField").classList.toggle("hidden", p!=="pollinations");
   $("pollKeyField").classList.toggle("hidden", p!=="pollinations");
   $("puterImgField").classList.toggle("hidden", p!=="puter");
+  $("craiyonImgField").classList.toggle("hidden", p!=="craiyon");
+  $("prodiaImgField").classList.toggle("hidden", p!=="prodia");
+  $("togetherImgField").classList.toggle("hidden", p!=="together");
   $("customImgField").classList.toggle("hidden", p!=="custom-img");
 }
 $("imgProvider").addEventListener("change", syncImgProviderVis);
@@ -601,9 +654,9 @@ $("falVidModel").addEventListener("change", syncFalVidCustom);
 syncFalVidCustom();
 function syncAnimVis(){
   const p=$("animProvider").value;
-  $("nextAnimBtn").classList.add("hidden");
   $("animField").classList.toggle("hidden", p!=="fal-ltx");
   $("animPuterField").classList.toggle("hidden", p!=="puter");
+  $("animPollField").classList.toggle("hidden", p!=="pollinations");
   if(p==="puter") syncPuterVidCustom();
   if(p==="fal-ltx") syncFalVidCustom();
 }
@@ -713,8 +766,62 @@ async function genImage(prompt){
   const p=$("imgProvider").value;
   return p==="pollinations" ? genImagePollinations(styled)
        : p==="puter"        ? genImagePuter(styled)
+       : p==="craiyon"      ? genImageCraiyon(styled)
+       : p==="prodia"       ? genImageProdia(styled)
+       : p==="together"     ? genImageTogether(styled)
        : p==="custom-img"   ? genImageCustom(styled)
        :                      genImageGemini(styled);
+}
+// Together AI (BYOK; FLUX, with a free model). OpenAI-style /v1/images/generations -> b64_json (stored as a data URL).
+async function genImageTogether(prompt){
+  const key=($("togetherKey").value||"").trim();
+  if(!key) throw new Error("Add your Together API key in Settings ⚙ (from api.together.xyz — free FLUX model available).");
+  const model=($("togetherModel").value||"black-forest-labs/FLUX.1-schnell-Free");
+  let r;
+  try{
+    r=await fetch("https://api.together.xyz/v1/images/generations",{
+      method:"POST",
+      headers:{ "Authorization":"Bearer "+key, "Content-Type":"application/json" },
+      body:JSON.stringify({ model, prompt:(IMG_PREFIX+prompt).trim(), width:1024, height:576, steps:4, n:1, response_format:"b64_json" })
+    });
+  }catch(e){ throw new Error("Couldn't reach Together — likely a CORS/network block from the browser. Tell me and I'll add a proxy. ("+(e.message||e)+")"); }
+  if(!r.ok){ let d=""; try{ d=await r.text(); }catch(_){ } throw new Error("Together "+r.status+(d?": "+d.slice(0,200):"")); }
+  const j=await r.json(), d=j.data&&j.data[0];
+  if(d&&d.b64_json) return "data:image/jpeg;base64,"+d.b64_json;
+  if(d&&d.url) return await blobToDataURL(await (await fetch(d.url)).blob());
+  throw new Error("Together returned no image data.");
+}
+// Prodia v2 (BYOK). One synchronous request to /v2/job returns the image bytes; we store a data URL (no canvas taint).
+async function genImageProdia(prompt){
+  const key=($("prodiaKey").value||"").trim();
+  if(!key) throw new Error("Add your Prodia API token in Settings ⚙ (from app.prodia.com/api).");
+  const type=($("prodiaModel").value||"inference.flux.schnell.txt2img.v2");
+  let r;
+  try{
+    r=await fetch("https://inference.prodia.com/v2/job",{
+      method:"POST",
+      headers:{ "Authorization":"Bearer "+key, "Content-Type":"application/json", "Accept":"image/jpeg" },
+      body:JSON.stringify({ type, config:{ prompt:(IMG_PREFIX+prompt).trim() } })
+    });
+  }catch(e){ throw new Error("Couldn't reach Prodia — likely a CORS/network block from the browser. Tell me and I'll add a proxy. ("+(e.message||e)+")"); }
+  if(!r.ok){ let d=""; try{ d=await r.text(); }catch(_){ } throw new Error("Prodia "+r.status+(d?": "+d.slice(0,200):"")); }
+  const blob=await r.blob();
+  if(!/^image\//.test(blob.type||"")) throw new Error("Prodia didn't return an image (got "+(blob.type||"?")+"). Check your token/plan.");
+  return await blobToDataURL(blob);
+}
+// Craiyon via your PHP proxy (free, no key, but dated & slow). The proxy returns a data URL.
+async function genImageCraiyon(prompt){
+  const model=($("craiyonModel")&&$("craiyonModel").value)||"none";
+  let r;
+  try{
+    r=await fetch(CRAIYON_PROXY,{ method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({ prompt:(IMG_PREFIX+prompt).trim(), model_type:model }) });
+  }catch(e){ throw new Error("Couldn't reach the Craiyon proxy — is craiyon.php deployed next to analyze.php? ("+(e.message||e)+")"); }
+  if(!r.ok){ let d=""; try{ const j=await r.json(); d=j.error||""; }catch(_){ } throw new Error("Craiyon proxy "+r.status+(d?": "+d:"")+". Craiyon's API is unofficial and may be down."); }
+  const j=await r.json();
+  if(j.image) return j.image;          // data URL (preferred)
+  if(j.image_url) return j.image_url;  // fallback URL (may taint the render canvas)
+  throw new Error(j.error||"Craiyon returned no image — try again (its API is flaky).");
 }
 
 function wavBytes(pcm, rate){
@@ -1052,33 +1159,6 @@ $("nextImgBtn").onclick = ()=>{
   $("imagesBtn").click();   // resumes — only the missing visuals, now with the new provider
 };
 
-// animation failover — cycle to the next usable animation provider (skip Off, skip fal without a key)
-function nextAnimProviderIndex(){
-  const opts=[...$("animProvider").options], n=opts.length, i=$("animProvider").selectedIndex;
-  for(let step=1; step<=n; step++){
-    const cand=opts[(i+step)%n].value;
-    if(cand==="off") continue;
-    if(cand==="fal-ltx" && !($("falKey").value||"").trim()) continue;   // skip fal if no key entered
-    return (i+step)%n;
-  }
-  return i;   // nothing else usable
-}
-function refreshNextAnimBtn(incomplete){
-  const b=$("nextAnimBtn"); if(!b) return;
-  const i=$("animProvider").selectedIndex, idx=nextAnimProviderIndex();
-  if(!incomplete || idx===i){ b.classList.add("hidden"); return; }
-  const opts=[...$("animProvider").options];
-  b.textContent="↻ Try next source — "+opts[idx].textContent.split(" — ")[0].trim();
-  b.classList.remove("hidden");
-}
-$("nextAnimBtn").onclick = ()=>{
-  const sel=$("animProvider"); sel.selectedIndex=nextAnimProviderIndex();
-  localStorage.setItem("s2s_animProvider", sel.value);
-  syncAnimVis(); refreshBeatAnimButtons();
-  $("nextAnimBtn").classList.add("hidden");
-  $("animBtn").click();   // re-run; fills only the shots still missing a clip, with the new provider
-};
-
 // ======================= TTS PROVIDERS =======================
 // Each provider is one async function. Gemini's tts() returns {pcm, rate} directly;
 // every other provider gets some encoded audio (MP3/WebM/etc.) and runs it through
@@ -1373,6 +1453,8 @@ $("videoBtn").onclick = async ()=>{
 
   let rec=null, running=true;          // declared out here so the catch/finally below can reach them
   const objUrls=[];                     // blob URLs for clips, revoked in finally
+  let wake=null;                        // screen wake lock so the phone doesn't sleep mid-render
+  try{ if(navigator.wakeLock && navigator.wakeLock.request) wake=await navigator.wakeLock.request("screen"); }catch(_){ }
   try{
   const rate = (pcmRate && isFinite(pcmRate) && pcmRate>0) ? pcmRate : 24000;   // guard a missing/bad sample rate
   // Timeline: title card, a held frame for each visual beat, the audio for each spoken beat.
@@ -1459,7 +1541,9 @@ $("videoBtn").onclick = async ()=>{
   (function loop(){ drawAt(Math.max(0, actx.currentTime - t0)); if(running) requestAnimationFrame(loop); })();
   segs.forEach(s=>{ if(s.audio){ const src=actx.createBufferSource(); src.buffer=s.audio; src.connect(gain); src.start(t0+s.start); } });
   const recMs = Math.min(20*60*1000, Math.max(1500, (isFinite(total)?total:1)*1000+500));   // always finite, so recording always stops
-  st.innerHTML='<span class="spin"></span>Recording in real time — '+Math.ceil(recMs/1000)+'s. Keep this tab open…';
+  const secsTotal=Math.ceil(recMs/1000);
+  const isMobile=/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent||"");
+  st.innerHTML='<span class="spin"></span>Recording in real time — '+secsTotal+'s. Keep this tab open and the screen on'+(wake?' (screen kept awake)':'')+'.'+((isMobile&&secsTotal>120)?'<br>⚠ This is a long video on a phone — if the screen sleeps or you switch apps the recording can cut off partway. For big films, render on a laptop/PC.':'');
   setTimeout(()=>{ running=false; try{rec.stop();}catch(_){ } }, recMs);
   await done;
   const v=document.createElement("a"); v.href=URL.createObjectURL(new Blob(chunks,{type:mime})); v.download=(project.title||"film")+".webm"; v.click();
@@ -1470,6 +1554,7 @@ $("videoBtn").onclick = async ()=>{
   }finally{
     canvas.classList.add("hidden"); try{actx.close()}catch(_){}
     objUrls.forEach(u=>{ try{ URL.revokeObjectURL(u); }catch(_){ } });
+    if(wake){ try{ wake.release(); }catch(_){ } wake=null; }
     btn.disabled=false;
   }
 };
@@ -1504,46 +1589,7 @@ $("imagesBtn").onclick = async ()=>{
   btn.disabled=false;
 };
 
-// ---------- STEP 3c: animation (batch) — animates every visual shot via the chosen provider. Confirms first (it costs money/credits). Resumable + Stop. ----------
-$("animBtn").onclick = async ()=>{
-  if(!project) return;
-  const prov=$("animProvider").value, btn=$("animBtn"), st=$("genStatus");
-  if(prov==="off"){ st.innerHTML='Pick an animation source first — open <a href="#" onclick="openSettings();return false;">Settings ⚙</a> → <strong>Animation generation</strong> (Puter is free with a sign-in; fal uses your own key).'; return; }
-  const all=project.beats.filter(b=>b.type==="visual");
-  if(!all.length){ st.textContent="No visual shots to animate."; return; }
-  const todo=all.filter(b=>!b._video);
-  if(!todo.length){ st.textContent="All shots already animated. (Use 🎬 Re-animate on a shot to redo one.)"; return; }
-  let warn;
-  if(prov==="fal-ltx"){
-    const mdl=$("falVidModel").value==="__custom__" ? ($("falVidCustom").value.trim()||"custom") : $("falVidModel").value;
-    if(/ltx-2/.test(mdl)){ const secs=parseInt($("animSecs").value||"6",10), pro=mdl.indexOf("/fast")<0, base=pro?0.06:0.04, rate=$("animRes").value==="1440p"?base*2:base, each=secs*rate;
-      warn=`Animate ${todo.length} shot(s) with fal (${pro?"LTX-2 Pro":"LTX-2 Fast"})? This bills your own fal account about $${(each*todo.length).toFixed(2)} (~$${each.toFixed(2)} each) and renders one at a time.`; }
-    else { warn=`Animate ${todo.length} shot(s) with fal model "${mdl}"? This bills your own fal account (cost depends on the model — check its fal page) and renders one at a time.`; }
-  }
-  else { warn=`Animate ${todo.length} shot(s) with Puter? A sign-in popup may appear. This uses your free Puter quota/credits and renders one at a time (~10s–2 min each).`; }
-  if(!confirm(warn)) return;
-  const already=all.length-todo.length;
-  btn.disabled=true; cancelGen=false; $("stopBtn").classList.remove("hidden"); $("nextAnimBtn").classList.add("hidden");
-  for(let i=0;i<todo.length;i++){
-    if(cancelGen) break;
-    const b=todo[i];
-    try{
-      const url=await genVideoForBeat(b, s=>{ st.innerHTML=`<span class="spin"></span>Animating ${i+1} of ${todo.length}${already?` (${already} done)`:""} — ${s}…`; });
-      b._video=url; fillImageSlot(b);
-    }catch(e){
-      if(/stopped/i.test(e.message||"")) break;
-      const slot=$(b._id)&&$(b._id).querySelector(".slot");
-      if(slot) slot.innerHTML=`<div class="style">animation failed: ${escapeHtml(e.message||String(e))} — click 🎬 Animate on this shot to retry, or check <a href="#" onclick="openSettings();return false;">Settings ⚙</a>.</div>`;
-    }
-    if(cancelGen) break;
-  }
-  const done=all.filter(b=>b._video).length;
-  st.textContent = cancelGen ? `Stopped — ${done} of ${all.length} animated. Click Generate animation to continue.`
-    : (done===all.length ? "Animation done — all "+done+" shots." : `Animated ${done} of ${all.length}. Click Generate animation again to fill the rest, or use Try next source.`);
-  $("stopBtn").classList.add("hidden");
-  refreshNextAnimBtn(done < all.length);
-  btn.disabled=false;
-};
+// Animation is per-shot: each visual slide has its own 🎬 Animate button (see fillImageSlot / regenVideo). No batch button.
 
 // ---------- projects: save / open / new (stored in this browser via IndexedDB) ----------
 const DB="s2s_db", STORE="projects";
@@ -1729,8 +1775,7 @@ async function falVideo(prompt, onStatus){
 async function regenVideo(b,btn){
   const prev=btn.textContent; btn.disabled=true; cancelGen=false;
   try{
-    const fn = $("animProvider").value==="puter" ? puterVideo : falVideo;
-    const url=await fn(b.prompt||"", s=>{ btn.textContent="🎬 "+s+"…"; });
+    const url=await genVideoForBeat(b, s=>{ btn.textContent="🎬 "+s+"…"; });
     b._video=url; fillImageSlot(b);
   }catch(e){ regenFail(b,btn,prev,"animation failed: "+escapeHtml(e.message||String(e))+" — check the Animation settings in <a href=\"#\" onclick=\"openSettings();return false;\">Settings ⚙</a>."); }
 }
@@ -1745,7 +1790,26 @@ async function puterVideo(prompt, onStatus){
   if(!url) throw new Error("Puter returned no video (you may need to sign in, or you're out of free credits)");
   return url;
 }
-function genVideoForBeat(b,onStatus){ return ($("animProvider").value==="puter" ? puterVideo : falVideo)(b.prompt||"", onStatus); }
+function genVideoForBeat(b,onStatus){
+  const p=$("animProvider").value;
+  const fn = p==="puter" ? puterVideo : p==="pollinations" ? pollVideo : falVideo;
+  return fn(b.prompt||"", onStatus);
+}
+// Pollinations video (BYOK — your Pollinations key + Pollen credits). Returns a clip URL or a blob object URL.
+async function pollVideo(prompt, onStatus){
+  const key=$("pollVidKey").value.trim();
+  if(!key) throw new Error("Add your Pollinations key in Settings ⚙ (Animation generation). Get one free at enter.pollinations.ai.");
+  if(onStatus) onStatus("rendering");
+  const model=$("pollVidModel").value||"wan";
+  const url="https://gen.pollinations.ai/video/"+encodeURIComponent((IMG_PREFIX+(prompt||"")).trim())+"?model="+encodeURIComponent(model);
+  const r=await fetch(url,{ headers:{ "Authorization":"Bearer "+key } });
+  if(!r.ok){ let d=""; try{ d=await r.text(); }catch(_){ } throw new Error("Pollinations "+r.status+": "+((d||"").slice(0,200)||r.statusText)); }
+  const blob=await r.blob(); const ct=(blob.type||"").toLowerCase();
+  if(ct.startsWith("video")||ct.includes("mp4")||ct==="application/octet-stream"||ct===""){ return URL.createObjectURL(blob); }
+  const txt=await blob.text(); const m=txt.match(/https?:\/\/[^\s"']+/);   // some responses return a URL as text
+  if(m) return m[0];
+  throw new Error("Pollinations returned an unexpected response ("+ct+")");
+}
 function refreshBeatAnimButtons(){ if(project && project.beats) project.beats.forEach(b=>{ if(b.type==="visual" && !b._pcm) fillImageSlot(b); }); }
 // single-beat voice generation, using whatever provider/voice is set now (shared by the loop and Regenerate)
 // ---------- Kokoro: high-quality open-source TTS that runs in the browser. Library + model load lazily on FIRST use, then cached. ----------
