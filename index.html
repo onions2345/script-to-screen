@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <!--
 ==================================================================================
@@ -206,6 +207,10 @@
   .addbar{margin-top:12px;text-align:center}
   .addbar .addend{width:auto;font-size:12px;padding:6px 14px;border-radius:9px;letter-spacing:0;text-transform:none;opacity:.75}
   .addbar .addend:hover{opacity:1}
+  #settingsCard h3.setsec-h{cursor:pointer;user-select:none;display:flex;align-items:center;gap:8px;border-top:1px solid var(--line);padding-top:14px;margin-top:16px}
+  #settingsCard h3.setsec-h:hover{color:var(--shoot)}
+  #settingsCard .setsec-arrow{display:inline-block;color:var(--shoot);font-size:12px;width:.9em;transition:transform .12s}
+  #settingsCard .setsec-body{margin-top:2px}
   .beat textarea.edit{min-height:72px;margin:6px 0}
   .beat input.edit{margin:6px 0}
   .beat .edlabel{display:block;font-size:12px;color:var(--muted);margin-top:6px}
@@ -621,8 +626,27 @@ cfgKeys.forEach(k=> ["input","change"].forEach(ev=> $(k).addEventListener(ev,()=
 });
 
 // gear toggles the settings panel; auto-open it for first-time users with no key yet
-$("gearBtn").onclick = ()=> $("settingsCard").classList.toggle("hidden");
-function openSettings(){ $("settingsCard").classList.remove("hidden"); $("settingsCard").scrollIntoView({behavior:"smooth",block:"start"}); }
+// Collapse each Settings section under its title; click the title (or arrow) to expand.
+function makeSettingsCollapsible(){
+  const card=$("settingsCard"); if(!card || card._accordion) return; card._accordion=true;
+  [...card.children].forEach(node=>{
+    if(node.tagName!=="H3") return;
+    const body=document.createElement("div"); body.className="setsec-body";
+    let n=node.nextSibling;
+    while(n && !(n.nodeType===1 && n.tagName==="H3")){ const next=n.nextSibling; body.appendChild(n); n=next; }
+    node.after(body);
+    node.classList.add("setsec-h");
+    node.insertAdjacentHTML("afterbegin", '<span class="setsec-arrow">▸</span>');
+    body.style.display="none";                                   // start collapsed
+    node.addEventListener("click", ()=>{
+      const open=body.style.display!=="none";
+      body.style.display=open?"none":"";
+      const a=node.querySelector(".setsec-arrow"); if(a) a.textContent=open?"▸":"▾";
+    });
+  });
+}
+$("gearBtn").onclick = ()=>{ makeSettingsCollapsible(); $("settingsCard").classList.toggle("hidden"); };
+function openSettings(){ makeSettingsCollapsible(); $("settingsCard").classList.remove("hidden"); $("settingsCard").scrollIntoView({behavior:"smooth",block:"start"}); }
 
 // show the right per-provider fields
 function syncTtsModelVis(){
@@ -738,7 +762,7 @@ async function genImageGemini(prompt){
 async function genImagePollinations(prompt){
   const model=($("pollModel").value||"flux"), key=($("pollKey").value||"").trim();
   let url="https://image.pollinations.ai/prompt/"+encodeURIComponent(IMG_PREFIX+prompt)
-        +"?width=1280&height=720&nologo=true&model="+encodeURIComponent(model)+"&seed="+Math.floor(Math.random()*1e6);
+        +"?width=1024&height=576&nologo=true&model="+encodeURIComponent(model)+"&seed="+Math.floor(Math.random()*1e6);
   if(key) url+="&key="+encodeURIComponent(key);
   const r=await fetch(url);
   if(!r.ok) throw new Error("Pollinations "+r.status+": "+(await r.text()).slice(0,200));
