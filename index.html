@@ -544,6 +544,7 @@
       <button id="downloadMp3Btn" class="ghost" disabled>Download MP3 (small)</button>
       <button id="exportBtn" class="ghost" disabled>Export storyboard (HTML)</button>
       <button id="videoBtn" class="ghost" disabled>Render video (WebM)</button>
+      <button id="stopVideoBtn" class="stop hidden">■ Stop render</button>
     </div>
     <p class="hint"><strong>Long script?</strong> The free tier caps requests per minute, so some lines/images may fail at first — that's normal. Wait a few seconds and click again; it only fills what's missing. Repeat until done.</p>
     <div id="genStatus" class="status"></div>
@@ -1576,7 +1577,7 @@ $("videoBtn").onclick = async ()=>{
   const gain=actx.createGain(); gain.connect(actx.destination);              // hear it while it records
   const dest=actx.createMediaStreamDestination(); gain.connect(dest);        // and feed it into the video
 
-  let rec=null, running=true;          // declared out here so the catch/finally below can reach them
+  let rec=null, running=true, stopRender=false;   // declared out here so the catch/finally below can reach them
   const objUrls=[];                     // blob URLs for clips, revoked in finally
   let wake=null;                        // screen wake lock so the phone doesn't sleep mid-render
   try{ if(navigator.wakeLock && navigator.wakeLock.request) wake=await navigator.wakeLock.request("screen"); }catch(_){ }
@@ -1592,7 +1593,7 @@ $("videoBtn").onclick = async ()=>{
       const dv=new DataView(b._pcm.buffer, b._pcm.byteOffset, n*2);   // DataView -> no byte-alignment requirement
       const buf=actx.createBuffer(1, n, rate); const ch=buf.getChannelData(0);
       for(let i=0;i<n;i++) ch[i]=dv.getInt16(i*2,true)/32768;
-      segs.push({img:cur,clipUrl:curClip,audio:buf,dur:buf.duration});
+      segs.push({img:cur,clipUrl:curClip,audio:buf,dur:buf.duration,overlay:(b.type==="onscreen"?(b.text||""):null)});
     }
   }
   for(const s of segs) if(s.img) await loadImg(s.img);
@@ -1632,7 +1633,17 @@ $("videoBtn").onclick = async ()=>{
       if(s.kb){ const mx=Math.max(0,(w-W)/2), my=Math.max(0,(h-H)/2); ox=s.kb.px*mx*(p-0.5)*0.6; oy=s.kb.py*my*(p-0.5)*0.6; }
       if(isFinite(w)&&isFinite(h)&&w>0&&h>0) cx.drawImage(im,(W-w)/2+ox,(H-h)/2+oy,w,h);
     }
-    if(s.title){ cx.fillStyle="#e7e9f2"; cx.textAlign="center"; cx.font="600 54px system-ui,-apple-system,sans-serif"; cx.fillText(s.title,W/2,H/2); }
+    if(s.overlay){                                                 // on-screen text, drawn as a readable lower-third caption
+      const fs=Math.round(H*0.06);
+      cx.font="700 "+fs+"px system-ui,-apple-system,sans-serif"; cx.textAlign="center"; cx.textBaseline="middle";
+      const maxW=W*0.86, words=String(s.overlay).split(/\s+/); const lines=[]; let ln="";
+      for(const w of words){ const t=ln?ln+" "+w:w; if(cx.measureText(t).width>maxW && ln){ lines.push(ln); ln=w; } else ln=t; }
+      if(ln) lines.push(ln);
+      const lh=fs*1.25, totalH=lines.length*lh; let y=H*0.80-totalH/2+lh/2;
+      if(y-lh/2+totalH>H*0.97) y=H*0.97-totalH+lh/2;               // keep it on screen if many lines
+      cx.lineWidth=Math.max(2,fs*0.16); cx.lineJoin="round"; cx.strokeStyle="rgba(0,0,0,0.85)"; cx.fillStyle="#ffffff";
+      lines.forEach(t=>{ cx.strokeText(t,W/2,y); cx.fillText(t,W/2,y); y+=lh; });
+    }
     cx.globalAlpha = 1;
   }
   let activeVid=null;                                              // the clip currently playing (restarts at each shot boundary)
@@ -1663,6 +1674,8 @@ $("videoBtn").onclick = async ()=>{
 
   await actx.resume();
   rec.start();
+  $("stopVideoBtn").classList.remove("hidden");
+  $("stopVideoBtn").onclick=()=>{ stopRender=true; running=false; try{ if(rec && rec.state!=="inactive") rec.stop(); }catch(_){ } st.textContent="Stopping render…"; };
   const t0=actx.currentTime+0.2;
   (function loop(){ drawAt(Math.max(0, actx.currentTime - t0)); if(running) requestAnimationFrame(loop); })();
   segs.forEach(s=>{ if(s.audio){ const src=actx.createBufferSource(); src.buffer=s.audio; src.connect(gain); src.start(t0+s.start); } });
@@ -1672,8 +1685,12 @@ $("videoBtn").onclick = async ()=>{
   st.innerHTML='<span class="spin"></span>Recording in real time — '+secsTotal+'s. Keep this tab open and the screen on'+(wake?' (screen kept awake)':'')+'.'+((isMobile&&secsTotal>120)?'<br>⚠ This is a long video on a phone — if the screen sleeps or you switch apps the recording can cut off partway. For big films, render on a laptop/PC.':'');
   setTimeout(()=>{ running=false; try{rec.stop();}catch(_){ } }, recMs);
   await done;
-  const v=document.createElement("a"); v.href=URL.createObjectURL(new Blob(chunks,{type:mime})); v.download=(project.title||"film")+".webm"; v.click();
-  st.textContent="Video exported (.webm). Plays in Chrome, VLC, and most players; if a site rejects WebM, re-wrap to MP4 in a free editor like CapCut.";
+  if(stopRender){
+    st.textContent="Render stopped — nothing saved. Click Render video to start again.";
+  } else {
+    const v=document.createElement("a"); v.href=URL.createObjectURL(new Blob(chunks,{type:mime})); v.download=(project.title||"film")+".webm"; v.click();
+    st.textContent="Video exported (.webm). Plays in Chrome, VLC, and most players; if a site rejects WebM, re-wrap to MP4 in a free editor like CapCut.";
+  }
   }catch(err){
     running=false; try{ if(rec && rec.state && rec.state!=="inactive") rec.stop(); }catch(_){}
     st.textContent="Video render failed: "+((err&&err.message)||err)+". If you regenerated audio or images, try generating those again; or set Motion to None in Settings ⚙ and retry.";
@@ -1681,6 +1698,7 @@ $("videoBtn").onclick = async ()=>{
     canvas.classList.add("hidden"); try{actx.close()}catch(_){}
     objUrls.forEach(u=>{ try{ URL.revokeObjectURL(u); }catch(_){ } });
     if(wake){ try{ wake.release(); }catch(_){ } wake=null; }
+    $("stopVideoBtn").classList.add("hidden");
     btn.disabled=false;
   }
 };
@@ -1991,8 +2009,9 @@ async function kokoroTTS(speaker,isOnscreen,text){
 async function ttsForBeat(b){
   const provider=$("ttsProvider").value, model=$("mTts").value.trim(), onscreen=b.type==="onscreen";
   const voice = castVoiceName(b.speaker, onscreen);
-  const styleInstr=onscreen?"Read in a flat, cold, robotic computer-readout voice, slightly slow.":("Speak in a "+(b.style||"natural, cinematic")+" tone.");
-  const geminiText=(onscreen?"Read in a flat, cold, robotic computer-readout voice, slightly slow: ":("Say in a "+(b.style||"natural, cinematic")+" tone: "))+(b.text||"");
+  // On-screen text now reads at a normal pace like a line (was hardcoded "flat, robotic, slightly slow"). Add a delivery note on the beat if you want a different style.
+  const styleInstr="Speak in a "+(b.style||"natural, cinematic")+" tone.";
+  const geminiText="Say in a "+(b.style||"natural, cinematic")+" tone: "+(b.text||"");
   return provider==="gemini" ? tts(model,voice,geminiText)
     : provider==="google-cloud" ? googleTTS(b.speaker,onscreen,b.text||"")
     : provider==="elevenlabs" ? elevenTTS(b.speaker,onscreen,b.text||"")
