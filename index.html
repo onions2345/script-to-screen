@@ -1057,8 +1057,18 @@ function renderOneBeat(b){                       // rebuild a single card in vie
   wireBeatControls(el,b);
   fillSlot(b);
 }
+function addBarEl(title, indexFn){
+  const bar=document.createElement("div"); bar.className="addbar";
+  bar.innerHTML=`<button class="ghost addend" title="${title}">＋ Add slide</button>`;
+  bar.querySelector(".addend").onclick=()=>{
+    document.querySelectorAll(".addmenu").forEach(m=>m.remove());
+    bar.after(buildAddMenu(t=>insertBeatAt(indexFn(), t)));
+  };
+  return bar;
+}
 function renderBeats(){
   const wrap=$("beats"); wrap.innerHTML="";
+  wrap.appendChild(addBarEl("Add a slide at the top", ()=>0));      // top add bar → insert before the first slide
   project.beats.forEach(b=>{
     const el=document.createElement("div"); el.className="beat"; el.id=b._id;
     el.innerHTML=beatViewHTML(b);
@@ -1066,13 +1076,7 @@ function renderBeats(){
     wireBeatControls(el,b);
     fillSlot(b);                                  // restores audio (voiced lines) or the image slot (visuals)
   });
-  const addBar=document.createElement("div"); addBar.className="addbar";
-  addBar.innerHTML=`<button class="ghost addend" title="Add a slide at the end">＋ Add slide</button>`;
-  wrap.appendChild(addBar);
-  addBar.querySelector(".addend").onclick=()=>{
-    document.querySelectorAll(".addmenu").forEach(m=>m.remove());
-    addBar.after(buildAddMenu(t=>insertBeatAt(project.beats.length, t)));
-  };
+  wrap.appendChild(addBarEl("Add a slide at the end", ()=>project.beats.length));   // bottom add bar → append
 }
 // ---------- add / delete slides (beats) ----------
 function reRenderBeats(){ project.beats.forEach((b,i)=> b._id="b"+i); renderBeats(); }   // re-id keeps DOM handles in sync with order
@@ -1578,8 +1582,9 @@ $("videoBtn").onclick = async ()=>{
   try{ if(navigator.wakeLock && navigator.wakeLock.request) wake=await navigator.wakeLock.request("screen"); }catch(_){ }
   try{
   const rate = (pcmRate && isFinite(pcmRate) && pcmRate>0) ? pcmRate : 24000;   // guard a missing/bad sample rate
-  // Timeline: title card, a held frame for each visual beat, the audio for each spoken beat.
-  let cur=null, curClip=null; const segs=[{img:null,clipUrl:null,title:(project.title||""),audio:null,dur:2.0}];
+  // Timeline: a held frame for each visual beat, the audio for each spoken beat. (No title card.)
+  let cur=(project.beats.find(b=>b.type==="visual" && b._img)||{})._img || null, curClip=null;
+  const segs=[];
   for(const b of project.beats){
     if(b.type==="visual"){ cur = b._img || cur; curClip = shotUsesClip(b) ? b._video : null; segs.push({img:cur,clipUrl:curClip,audio:null,dur:HOLD}); }
     else if(b._pcm && b._pcm.length>=2){
