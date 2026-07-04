@@ -197,7 +197,15 @@
   .beat img{width:100%;border-radius:8px;margin-top:10px;display:block}
   .beat .cap{font-family:var(--mono);font-size:12px;color:var(--shoot);margin-top:8px}
   .beat{position:relative}
-  .beat .editbtn{position:absolute;top:10px;right:10px;width:auto;font-size:12px;padding:4px 10px;border-radius:8px;letter-spacing:0;text-transform:none}
+  .beat .beatctl{position:absolute;top:10px;right:10px;display:flex;gap:5px}
+  .beat .beatctl button{width:auto;font-size:13px;line-height:1;padding:5px 8px;border-radius:8px;letter-spacing:0;text-transform:none;margin:0}
+  .beat .beatctl .delbtn{color:#e88}
+  .addmenu{border:1px dashed var(--shoot);border-radius:11px;padding:9px 11px;margin-top:8px;background:var(--panel-2);display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+  .addmenu .addmenu-lbl{font-size:12px;color:var(--muted);margin-right:2px}
+  .addmenu button{width:auto;font-size:12px;padding:5px 10px;border-radius:8px;margin:0;letter-spacing:0;text-transform:none}
+  .addbar{margin-top:12px;text-align:center}
+  .addbar .addend{width:auto;font-size:12px;padding:6px 14px;border-radius:9px;letter-spacing:0;text-transform:none;opacity:.75}
+  .addbar .addend:hover{opacity:1}
   .beat textarea.edit{min-height:72px;margin:6px 0}
   .beat input.edit{margin:6px 0}
   .beat .edlabel{display:block;font-size:12px;color:var(--muted);margin-top:6px}
@@ -985,18 +993,27 @@ async function previewVoice(sp, selVoice, btn){
 function setCastMsg(m){ const el=$("castMsg"); if(el) el.textContent=m; }
 
 function beatViewHTML(b){
-  const editBtn = `<button class="ghost editbtn">✎ Edit</button>`;
+  const ctl = `<div class="beatctl">`
+    + `<button class="ghost editbtn" title="Edit">✎</button>`
+    + `<button class="ghost addbtn" title="Add a slide below">＋</button>`
+    + `<button class="ghost delbtn" title="Delete this slide">🗑</button>`
+    + `</div>`;
   if(b.type==="visual"){
-    return editBtn + `<div class="who visual">Visual</div><p>${escapeHtml(b.prompt||"")}</p>${b.caption?`<div class="cap">${escapeHtml(b.caption)}</div>`:""}<div class="slot"></div>`;
+    return ctl + `<div class="who visual">Visual</div><p>${escapeHtml(b.prompt||"")}</p>${b.caption?`<div class="cap">${escapeHtml(b.caption)}</div>`:""}<div class="slot"></div>`;
   }
   const who = b.type==="onscreen" ? "On screen" : (b.speaker||"Line");
-  return editBtn + `<div class="who ${b.type}">${escapeHtml(who)}</div><p>${escapeHtml(b.text||"")}</p>${b.style?`<div class="style">${escapeHtml(b.style)}</div>`:""}<div class="slot"></div>`;
+  return ctl + `<div class="who ${b.type}">${escapeHtml(who)}</div><p>${escapeHtml(b.text||"")}</p>${b.style?`<div class="style">${escapeHtml(b.style)}</div>`:""}<div class="slot"></div>`;
 }
 function fillSlot(b){ if(b._pcm) fillAudioSlot(b); else if(b.type==="visual") fillImageSlot(b); }   // visual beats always show Generate/Upload + any images
+function wireBeatControls(el,b){
+  const eb=el.querySelector(".editbtn"); if(eb) eb.onclick=()=>enterEdit(b);
+  const ab=el.querySelector(".addbtn");  if(ab) ab.onclick=()=>toggleAddMenu(b);
+  const db=el.querySelector(".delbtn");  if(db) db.onclick=()=>deleteBeat(b);
+}
 function renderOneBeat(b){                       // rebuild a single card in view mode and re-attach its slot media
   const el=$(b._id); if(!el) return;
   el.innerHTML=beatViewHTML(b);
-  const eb=el.querySelector(".editbtn"); if(eb) eb.onclick=()=>enterEdit(b);
+  wireBeatControls(el,b);
   fillSlot(b);
 }
 function renderBeats(){
@@ -1005,33 +1022,96 @@ function renderBeats(){
     const el=document.createElement("div"); el.className="beat"; el.id=b._id;
     el.innerHTML=beatViewHTML(b);
     wrap.appendChild(el);
-    const eb=el.querySelector(".editbtn"); if(eb) eb.onclick=()=>enterEdit(b);
-    if(b.type==="visual") fillImageSlot(b);     // Generate/Upload available from the start
+    wireBeatControls(el,b);
+    fillSlot(b);                                  // restores audio (voiced lines) or the image slot (visuals)
   });
+  const addBar=document.createElement("div"); addBar.className="addbar";
+  addBar.innerHTML=`<button class="ghost addend" title="Add a slide at the end">＋ Add slide</button>`;
+  wrap.appendChild(addBar);
+  addBar.querySelector(".addend").onclick=()=>{
+    document.querySelectorAll(".addmenu").forEach(m=>m.remove());
+    addBar.after(buildAddMenu(t=>insertBeatAt(project.beats.length, t)));
+  };
+}
+// ---------- add / delete slides (beats) ----------
+function reRenderBeats(){ project.beats.forEach((b,i)=> b._id="b"+i); renderBeats(); }   // re-id keeps DOM handles in sync with order
+function newBeat(type){
+  if(type==="visual")   return { type:"visual", prompt:"", caption:"", style:(project.style||"") };
+  if(type==="onscreen") return { type:"onscreen", text:"", style:"" };
+  const sp = Object.keys(project.voiceCast||{})[0] || "Narrator";     // reuse an existing voice actor by default
+  return { type:"line", speaker:sp, text:"", style:"" };
+}
+function buildAddMenu(onPick){
+  const menu=document.createElement("div"); menu.className="addmenu";
+  menu.innerHTML = `<span class="addmenu-lbl">Add slide:</span>`
+    + `<button class="ghost am" data-t="visual">🎬 Visual</button>`
+    + `<button class="ghost am" data-t="line">💬 Voice line</button>`
+    + `<button class="ghost am" data-t="onscreen">📝 On screen</button>`
+    + `<button class="ghost am xx" title="Cancel">✕</button>`;
+  menu.querySelector(".xx").onclick=()=>menu.remove();
+  menu.querySelectorAll(".am[data-t]").forEach(btn=> btn.onclick=()=>{ const t=btn.dataset.t; menu.remove(); onPick(t); });
+  return menu;
+}
+function toggleAddMenu(b){
+  const el=$(b._id); if(!el) return;
+  const nx=el.nextElementSibling;
+  if(nx && nx.classList.contains("addmenu")){ nx.remove(); return; }   // click again = close
+  document.querySelectorAll(".addmenu").forEach(m=>m.remove());
+  el.after(buildAddMenu(t=>insertBeatAt(project.beats.indexOf(b)+1, t)));
+}
+function insertBeatAt(index, type){
+  if(!project) return;
+  const nb=newBeat(type);
+  project.beats.splice(index, 0, nb);
+  reRenderBeats();
+  enterEdit(nb);                                                       // open the new (empty) slide ready to type
+  const el=$(nb._id); if(el) el.scrollIntoView({behavior:"smooth", block:"center"});
+}
+function deleteBeat(b){
+  const i=project.beats.indexOf(b); if(i<0) return;
+  const kind = b.type==="visual" ? "Visual" : b.type==="onscreen" ? "On-screen" : "Voice";
+  const hasMedia = !!(b._img || b._pcm || b._video);
+  if(!confirm("Delete this "+kind+" slide?"+(hasMedia?" Its generated media will be removed too.":""))) return;
+  project.beats.splice(i,1);
+  reRenderBeats();
 }
 // ---------- inline editing of a beat's text ----------
 function enterEdit(b){
   const el=$(b._id); if(!el) return;
-  const isV=b.type==="visual";
+  const isV=b.type==="visual", isLine=b.type==="line";
   const mainVal=isV?(b.prompt||""):(b.text||"");
   const subVal =isV?(b.caption||""):(b.style||"");
   const mainLabel=isV?"Image prompt":(b.type==="onscreen"?"On-screen text":"Spoken text");
   const subLabel =isV?"Caption (optional)":"Delivery note (optional)";
   const who=isV?"Visual":(b.type==="onscreen"?"On screen":(b.speaker||"Line"));
   el.innerHTML = `<div class="who ${isV?"visual":b.type}">${escapeHtml(who)}</div>`
+    + (isLine?`<label class="edlabel">Voice actor / speaker</label><input class="edit spk" type="text" placeholder="e.g. Narrator, Samuel Pepys">`:"")
     + `<label class="edlabel">${mainLabel}</label><textarea class="edit main"></textarea>`
     + `<label class="edlabel">${subLabel}</label><input class="edit sub" type="text">`
     + `<div class="edit-actions"><button class="primary save">Save</button><button class="ghost cancel">Cancel</button></div>`;
   const ta=el.querySelector("textarea.main"); ta.value=mainVal;     // set via JS so raw text isn't HTML-escaped
   const sub=el.querySelector("input.sub"); sub.value=subVal;
-  el.querySelector(".save").onclick=()=>saveEdit(b, ta.value, sub.value);
+  const spk=el.querySelector("input.spk"); if(spk) spk.value=b.speaker||"";
+  el.querySelector(".save").onclick=()=>saveEdit(b, ta.value, sub.value, spk?spk.value:null);
   el.querySelector(".cancel").onclick=()=>renderOneBeat(b);
-  ta.focus();
+  (spk||ta).focus();
 }
-function saveEdit(b, mainVal, subVal){
+function castHasSpeaker(name){ return Object.keys(project.voiceCast||{}).some(k=>normName(k)===normName(name)); }
+function firstVoice(){ return Object.values(project.voiceCast||{})[0] || (typeof VOICES!=="undefined" && VOICES[0]) || "Zephyr"; }
+function saveEdit(b, mainVal, subVal, spkVal){
   const isV=b.type==="visual";
   const before=isV?(b.prompt||""):(b.text||"");
   if(isV){ b.prompt=mainVal; b.caption=subVal; } else { b.text=mainVal; b.style=subVal; }
+  if(b.type==="line" && spkVal!=null){
+    const newName=(spkVal.trim()||"Narrator");
+    if(normName(newName)!==normName(b.speaker||"")){
+      b.speaker=newName;
+      delete b._pcm;                                            // voice changed → this line needs re-voicing
+      if(!castHasSpeaker(newName)){ project.voiceCast=project.voiceCast||{}; project.voiceCast[newName]=firstVoice(); }
+      renderBreakdown();                                        // refresh cast table (maybe a new actor) + all beats
+      return;
+    }
+  }
   renderOneBeat(b);
   if(before!==mainVal){                                 // existing audio/image is now stale — nudge to regenerate
     const had = isV ? !!b._img : !!b._pcm;
