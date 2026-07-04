@@ -759,16 +759,33 @@ async function genImageGemini(prompt){
   if(!part) throw new Error("no image returned");
   return "data:"+(part.inlineData.mimeType||"image/png")+";base64,"+part.inlineData.data;
 }
+// Center-crop any image blob to a target aspect ratio, returning a data URL. Avoids stretched/squashed output.
+async function cropBlobToAspect(blob, ar, outW){
+  const url=URL.createObjectURL(blob);
+  try{
+    const img=await new Promise((res,rej)=>{ const im=new Image(); im.onload=()=>res(im); im.onerror=()=>rej(new Error("decode")); im.src=url; });
+    const iw=img.naturalWidth||img.width, ih=img.naturalHeight||img.height;
+    if(!iw||!ih) return await blobToDataURL(blob);
+    let sx=0,sy=0,sw=iw,sh=ih; const cur=iw/ih;
+    if(cur>ar+0.02){ sw=Math.round(ih*ar); sx=Math.round((iw-sw)/2); }        // too wide -> trim sides
+    else if(cur<ar-0.02){ sh=Math.round(iw/ar); sy=Math.round((ih-sh)/2); }   // too tall -> trim top & bottom
+    const cw=outW||1280, ch=Math.round(cw/ar);
+    const c=document.createElement("canvas"); c.width=cw; c.height=ch;
+    c.getContext("2d").drawImage(img, sx,sy,sw,sh, 0,0,cw,ch);
+    return c.toDataURL("image/jpeg",0.92);
+  } finally { URL.revokeObjectURL(url); }
+}
 async function genImagePollinations(prompt){
   const model=($("pollModel").value||"flux"), key=($("pollKey").value||"").trim();
+  // Ask for the model's native square (clean pixels), then crop to 16:9 ourselves — Pollinations stretches non-square requests, which looked squashed.
   let url="https://image.pollinations.ai/prompt/"+encodeURIComponent(IMG_PREFIX+prompt)
-        +"?width=1024&height=576&nologo=true&model="+encodeURIComponent(model)+"&seed="+Math.floor(Math.random()*1e6);
+        +"?width=1024&height=1024&nologo=true&model="+encodeURIComponent(model)+"&seed="+Math.floor(Math.random()*1e6);
   if(key) url+="&key="+encodeURIComponent(key);
   const r=await fetch(url);
   if(!r.ok) throw new Error("Pollinations "+r.status+": "+(await r.text()).slice(0,200));
   const blob=await r.blob();
   if(!/^image\//.test(blob.type)) throw new Error("Pollinations didn't return an image — it may be busy/rate-limited. Try again, or add a free key in Settings.");
-  return await blobToDataURL(blob);
+  return await cropBlobToAspect(blob, 16/9, 1280);
 }
 async function genImagePuter(prompt){
   if(!(window.puter&&puter.ai&&puter.ai.txt2img)) throw new Error("Puter isn't loaded — check your connection and try again.");
