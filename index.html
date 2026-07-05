@@ -362,7 +362,7 @@
         <option value="seedance">Seedance</option>
       </select>
       <div class="warn"><strong>Needs a Pollinations key &amp; Pollen credits</strong> (not no-key). Make a free account at <a href="https://enter.pollinations.ai" target="_blank" rel="noopener">enter.pollinations.ai</a> — new accounts get some <strong>free Pollen</strong> to start, then it's pay-as-you-go ($1 ≈ 1 Pollen) from your own balance. Renders one clip at a time. Your key is stored only in this browser.</div>
-      <div class="hint">Video is in <em>alpha</em> on Pollinations. If a model id is rejected, check <a href="https://gen.pollinations.ai/v1/models" target="_blank" rel="noopener">the model list</a>. Clips are per-shot — make them with the <strong>🎬 Animate</strong> button under each visual; they aren't auto-stitched, so download what you want.</div>
+      <div class="hint">Video is in <em>alpha</em> on Pollinations. If a model id is rejected, check <a href="https://gen.pollinations.ai/v1/models" target="_blank" rel="noopener">the model list</a>. Clips are per-shot — make them with the <strong>🎬 Animate</strong> button under each visual; they aren't auto-stitched, so download what you want. <strong>Length is set by the model</strong> — there's no separate length control (video is alpha).</div>
     </div>
     <div id="animPuterField" class="hidden">
       <label for="puterVidModel">Puter video model</label>
@@ -378,7 +378,7 @@
         <option value="__custom__">Custom — type a model id…</option>
       </select>
       <input id="puterVidCustom" class="hidden" type="text" placeholder="exact Puter model id, e.g. kling/… , pixverse/… , bytedance/seedance-…" autocomplete="off" />
-      <div class="hint"><strong>No key needed.</strong> A quick <strong>Puter sign-in popup</strong> appears on first use, then you get free credits — Puter's "User-Pays" model means it's free to start, and after the free quota your own Puter account covers usage (cheapest is <strong>Wan</strong>). Want Kling, PixVerse, Seedance, Hailuo and others? Pick <strong>Custom</strong> and paste the id from <a href="https://docs.puter.com/AI/txt2vid/" target="_blank" rel="noopener">Puter's video docs</a>. Clips render one at a time (~10s–2 min each), so animate <strong>per shot</strong> with the <strong>🎬 Animate</strong> button under each visual. Clips aren't auto-stitched into the in-app video yet — download the ones you want.</div>
+      <div class="hint"><strong>No key needed.</strong> A quick <strong>Puter sign-in popup</strong> appears on first use, then you get free credits — Puter's "User-Pays" model means it's free to start, and after the free quota your own Puter account covers usage (cheapest is <strong>Wan</strong>). Want Kling, PixVerse, Seedance, Hailuo and others? Pick <strong>Custom</strong> and paste the id from <a href="https://docs.puter.com/AI/txt2vid/" target="_blank" rel="noopener">Puter's video docs</a>. Clips render one at a time (~10s–2 min each), so animate <strong>per shot</strong> with the <strong>🎬 Animate</strong> button under each visual. Clips aren't auto-stitched into the in-app video yet — download the ones you want. <strong>Clip length is set by the model</strong> (e.g. Wan ≈5s, Veo ≈8s, Sora longer) — Puter has no separate length control, so pick a model for the length you want.</div>
     </div>
     <div id="animField" class="hidden">
       <label for="falKey">fal.ai API key</label>
@@ -392,15 +392,15 @@
       <input id="falVidCustom" class="hidden" type="text" placeholder="fal model id, e.g. fal-ai/kling-video/v2.5-turbo/pro/text-to-video" autocomplete="off" />
       <div class="row">
         <div>
-          <label for="animSecs">Clip length</label>
-          <select id="animSecs"><option value="6" selected>6 seconds</option><option value="8">8 seconds</option><option value="10">10 seconds</option></select>
+          <label for="animSecs">Clip length (seconds)</label>
+          <input id="animSecs" type="number" min="6" max="20" step="2" value="6" inputmode="numeric" />
         </div>
         <div>
           <label for="animRes">Resolution</label>
           <select id="animRes"><option value="1080p" selected>1080p — $0.04/sec</option><option value="1440p">1440p — $0.08/sec</option></select>
         </div>
       </div>
-      <div class="warn"><strong>This costs real money</strong> — billed to <em>your own</em> fal.ai account, about <strong>$0.04/sec</strong> at 1080p, so one 6-second clip ≈ <strong>$0.24</strong> (a 20-shot script ≈ $5). Clips render <strong>one at a time</strong> and take ~10–60s each, so animation is <strong>per-shot, on demand</strong> — use the <strong>🎬 Animate</strong> button under each visual, not a bulk button. Your key is stored only in this browser.</div>
+      <div class="warn"><strong>This costs real money</strong> — billed to <em>your own</em> fal.ai account, about <strong>$0.04/sec</strong> at 1080p, so one 6-second clip ≈ <strong>$0.24</strong> (a 20-shot script ≈ $5). Clips render <strong>one at a time</strong> and take ~10–60s each, so animation is <strong>per-shot, on demand</strong> — use the <strong>🎬 Animate</strong> button under each visual, not a bulk button. Your key is stored only in this browser. <strong>Clip length: type any value 6–20s</strong> (LTX-2 uses even numbers, so odd/out-of-range values snap to the nearest); over 10s runs at 1080p only, and cost scales with length (a 20s clip ≈ $0.80 at 1080p Fast).</div>
       <div class="hint">LTX-2 (Lightricks) is cheapest and uses the length/resolution above. <strong>Custom</strong> lets you run <em>any</em> fal video model — paste an id from the <a href="https://fal.ai/models?categories=text-to-video" target="_blank" rel="noopener">fal model gallery</a> (Kling, Veo, Wan, Hailuo, PixVerse, Seedance…); it sends just the prompt and uses that model's defaults, and cost depends on the model. <a href="https://fal.ai/dashboard/keys" target="_blank" rel="noopener">Get a fal.ai key</a> (needs billing). Clips come back as <strong>.mp4 links per shot</strong> — not auto-stitched into the in-app video yet, so download what you want (fal links are temporary).</div>
     </div>
 
@@ -691,6 +691,9 @@ syncPuterVidCustom();
 function syncFalVidCustom(){ $("falVidCustom").classList.toggle("hidden", $("falVidModel").value!=="__custom__"); }
 $("falVidModel").addEventListener("change", syncFalVidCustom);
 syncFalVidCustom();
+// LTX-2 only accepts even durations 6–20; snap whatever the user types to the nearest valid value.
+function snapLtxDur(v){ v=parseInt(v,10); if(isNaN(v)) v=6; v=Math.max(6,Math.min(20,v)); if(v%2) v=Math.round(v/2)*2; return v; }
+$("animSecs").addEventListener("change", ()=>{ $("animSecs").value=snapLtxDur($("animSecs").value); });
 function syncAnimVis(){
   const p=$("animProvider").value;
   $("animField").classList.toggle("hidden", p!=="fal-ltx");
@@ -1906,8 +1909,10 @@ async function falVideo(prompt, onStatus){
   const model = sel==="__custom__" ? ($("falVidCustom").value.trim()||"fal-ai/ltx-2/text-to-video/fast") : (sel||"fal-ai/ltx-2/text-to-video/fast");
   const promptText=(IMG_PREFIX+(prompt||"")).trim();
   // LTX-2 models take our length/resolution controls; any other fal model just gets the prompt + its own defaults.
+  const dur=snapLtxDur($("animSecs").value);
+  const res=(dur>10)?"1080p":($("animRes").value||"1080p");   // LTX-2: clips over 10s are 1080p/25fps only
   const input = /ltx-2/.test(model)
-    ? { prompt:promptText, duration:parseInt($("animSecs").value||"6",10), resolution:$("animRes").value||"1080p", fps:25, generate_audio:false }
+    ? { prompt:promptText, duration:dur, resolution:res, fps:25, generate_audio:false }
     : { prompt:promptText };
   const auth={ "Authorization":"Key "+key };
   const sub=await fetch("https://queue.fal.run/"+model, { method:"POST", headers:{ ...auth, "Content-Type":"application/json" }, body:JSON.stringify(input) });
