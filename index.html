@@ -665,7 +665,7 @@ function syncTtsModelVis(){
   $("webField").classList.toggle("hidden", p!=="webspeech");
   $("kokoroField").classList.toggle("hidden", p!=="kokoro");
 }
-$("ttsProvider").addEventListener("change", syncTtsModelVis);
+$("ttsProvider").addEventListener("change", ()=>{ syncTtsModelVis(); if(project) renderCast(); });
 syncTtsModelVis();
 
 // show the right per-image-provider fields
@@ -993,28 +993,39 @@ ${script}`;
 
 function renderBreakdown(){
   $("projTitle").textContent = (project.title||"Breakdown")+" — casting";
-  const cast=$("castBody"); cast.innerHTML="";
-  Object.entries(project.voiceCast||{}).forEach(([sp,voice])=>{
-    const tr=document.createElement("tr");
-    const opts=VOICES.map(v=>`<option ${v===voice?"selected":""}>${v}</option>`).join("");
-    tr.innerHTML=`<td>${escapeHtml(sp)}</td><td><select data-sp="${escapeHtml(sp)}">${opts}</select></td><td class="prevcell"><button type="button" class="ghost prev" title="Hear this voice">▶</button></td>`;
-    cast.appendChild(tr);
-  });
-  cast.querySelectorAll("tr").forEach(tr=>{
-    const s=tr.querySelector("select"), pb=tr.querySelector(".prev");
-    s.onchange=()=>{
-      const sp=s.dataset.sp; project.voiceCast[sp]=s.value;
-      project.beats.forEach(b=>{                                  // re-voice just this character next time
-        const mine = (b.type==="line" && normName(b.speaker)===normName(sp)) || (b.type==="onscreen" && isSysLabel(sp));
-        if(mine){ delete b._pcm; const el=$(b._id); if(el){ const sl=el.querySelector(".slot"); if(sl) sl.innerHTML=""; } }
-      });
-    };
-    pb.onclick=()=>previewVoice(s.dataset.sp, s.value, pb);      // preview the voice this character will actually use
-  });
+  renderCast();
   renderBeats();
   $("exportBtn").disabled=false;
   $("breakdownCard").classList.remove("hidden");
   $("storyCard").classList.remove("hidden");
+}
+function renderCast(){
+  const cast=$("castBody"); if(!cast) return; cast.innerHTML="";
+  const provider=$("ttsProvider").value, fam=voiceFamily(provider), list=fam?VOICE_LISTS[fam]:null;
+  Object.keys(project.voiceCast||{}).forEach(sp=>{
+    const tr=document.createElement("tr");
+    let cell;
+    if(list){
+      const cur=resolveVoice(fam, provider, sp, isSysLabel(sp));
+      const opts=list.map(o=>`<option value="${escapeHtml(o.v)}" ${o.v===cur?"selected":""}>${escapeHtml(o.label)}</option>`).join("");
+      cell=`<select data-sp="${escapeHtml(sp)}">${opts}</select>`;
+    } else {
+      cell=`<span style="color:var(--muted);font-size:13px">this provider uses one voice for all lines</span>`;
+    }
+    tr.innerHTML=`<td>${escapeHtml(sp)}</td><td>${cell}</td><td class="prevcell"><button type="button" class="ghost prev" title="Hear this voice">▶</button></td>`;
+    cast.appendChild(tr);
+  });
+  cast.querySelectorAll("tr").forEach(tr=>{
+    const s=tr.querySelector("select"), pb=tr.querySelector(".prev"), spName=tr.querySelector("td").textContent;
+    if(s) s.onchange=()=>{
+      setCastVoice(fam, s.dataset.sp, s.value);
+      project.beats.forEach(b=>{                                  // re-voice just this character next time
+        const mine = (b.type==="line" && normName(b.speaker)===normName(s.dataset.sp)) || (b.type==="onscreen" && isSysLabel(s.dataset.sp));
+        if(mine){ delete b._pcm; const el=$(b._id); if(el){ const sl=el.querySelector(".slot"); if(sl) sl.innerHTML=""; } }
+      });
+    };
+    if(pb) pb.onclick=()=>previewVoice(s?s.dataset.sp:spName, s?s.value:"", pb);   // preview the voice this character will actually use
+  });
 }
 // ---- voice preview: synthesize a short sample via the SAME path real lines use (so it's framed correctly and matches the chosen provider) ----
 const PREVIEW_LINE="Hi — this is the voice I'll use for this character.";
@@ -1352,12 +1363,10 @@ function castSpeakerList(){ return Object.keys(project.voiceCast||{}).filter(k=>
 function castSpeakerIdx(speaker){ const want=normName(speaker); return castSpeakerList().findIndex(k=>normName(k)===want); }
 function puterOpts(providerKey, speaker, isOnscreen, instr){
   const cfg = PUTER_TTS[providerKey] || PUTER_TTS["puter-gemini"];
-  if(cfg.useCast){
-    const v = castVoiceName(speaker, isOnscreen);
-    return cfg.build(v, instr);
-  }
-  const idx = isOnscreen ? cfg.voices.length-1 : Math.max(0, castSpeakerIdx(speaker));
-  return cfg.build(cfg.voices[idx % cfg.voices.length], instr);
+  if(cfg.useCast){ return cfg.build(castVoiceName(speaker, isOnscreen), instr); }
+  const fam=voiceFamily(providerKey);
+  const v = (fam && resolveVoice(fam, providerKey, speaker, isOnscreen)) || cfg.voices[isOnscreen?cfg.voices.length-1:Math.max(0,castSpeakerIdx(speaker))%cfg.voices.length];
+  return cfg.build(v, instr);
 }
 async function decodeToPCM24(buf){   // any encoded audio -> 24kHz mono Int16 PCM, to match the pipeline
   _ac = _ac || new (window.AudioContext||window.webkitAudioContext)();
@@ -1378,10 +1387,7 @@ async function puterTTS(opts, text){
 
 // Google Cloud Text-to-Speech — same Google key, separate service & quota from Gemini TTS.
 const GCLOUD_VOICES=["en-US-Neural2-A","en-US-Neural2-C","en-US-Neural2-D","en-US-Neural2-E","en-US-Neural2-F","en-US-Neural2-G","en-US-Neural2-H","en-US-Neural2-I","en-US-Neural2-J"];
-function gcloudVoice(speaker,isOnscreen){
-  if(isOnscreen) return "en-US-Neural2-J";
-  return GCLOUD_VOICES[Math.max(0,castSpeakerIdx(speaker)) % GCLOUD_VOICES.length];
-}
+function gcloudVoice(speaker,isOnscreen){ return resolveVoice("google","google-cloud",speaker,isOnscreen); }
 async function googleTTS(speaker,isOnscreen,text){
   if(!keyEnabled("Audio")) throw new Error("Using your key for voices is turned off in Settings ⚙ — turn it on there, or pick a free voice provider (Kokoro / Puter / Pollinations).");
   const name=gcloudVoice(speaker,isOnscreen);
@@ -1397,10 +1403,7 @@ async function googleTTS(speaker,isOnscreen,text){
 
 // StreamElements — free, no key, no sign-in (Amazon Polly voices). Unofficial endpoint.
 const SE_VOICES=["Brian","Amy","Emma","Joey","Joanna","Matthew","Kendra","Justin","Salli","Russell"];
-function seVoice(speaker,isOnscreen){
-  if(isOnscreen) return "Brian";
-  return SE_VOICES[Math.max(0,castSpeakerIdx(speaker)) % SE_VOICES.length];
-}
+function seVoice(speaker,isOnscreen){ return resolveVoice("streamelements","streamelements",speaker,isOnscreen); }
 async function streamTTS(speaker,isOnscreen,text){
   const v=seVoice(speaker,isOnscreen);
   const url="https://api.streamelements.com/kappa/v2/speech?voice="+encodeURIComponent(v)+"&text="+encodeURIComponent(text||"");
@@ -1424,10 +1427,7 @@ async function customTTS(text){
 
 // ElevenLabs — your own key (top quality). Auto-maps characters to default voices.
 const EL_VOICES=["21m00Tcm4TlvDq8ikWAM","pNInz6obpgDQGcFmaJgB","EXAVITQu4vr4xnSDxMaL","ErXwobaYiN019PkySvjV","MF3mGyEYCl7XYWbV9V6O","TxGEqnHWrfWFTfGW9XjX","AZnzlk1XvdvUeBnXmlld","yoZ06aMxZJJ28mfd3POQ"];
-function elVoice(speaker,isOnscreen){
-  if(isOnscreen) return EL_VOICES[1];
-  return EL_VOICES[Math.max(0,castSpeakerIdx(speaker)) % EL_VOICES.length];
-}
+function elVoice(speaker,isOnscreen){ return resolveVoice("eleven","elevenlabs",speaker,isOnscreen); }
 async function elevenTTS(speaker,isOnscreen,text){
   const key=($("elevenKey").value||"").trim();
   if(!key) throw new Error("Enter your ElevenLabs API key in Settings");
@@ -1982,9 +1982,56 @@ function refreshBeatAnimButtons(){ if(project && project.beats) project.beats.fo
 // ---------- Kokoro: high-quality open-source TTS that runs in the browser. Library + model load lazily on FIRST use, then cached. ----------
 // Full Kokoro v1.0 English voice set (20 American + 8 British), interleaved for variety in per-character assignment
 const KOKORO_VOICES=["af_heart","am_michael","bf_emma","bm_george","af_bella","am_fenrir","bf_isabella","bm_lewis","af_nicole","am_adam","bf_alice","bm_daniel","af_aoede","am_liam","bf_lily","bm_fable","af_kore","am_eric","af_sarah","am_puck","af_nova","am_echo","af_sky","am_onyx","af_jessica","am_santa","af_river","af_alloy"];
-function kokoroVoiceFor(speaker,isOnscreen){
-  if(isOnscreen) return "am_onyx";                                  // deep, neutral voice for system/on-screen lines
-  return KOKORO_VOICES[Math.max(0,castSpeakerIdx(speaker)) % KOKORO_VOICES.length];
+function kokoroVoiceFor(speaker,isOnscreen){ return resolveVoice("kokoro","kokoro",speaker,isOnscreen); }
+
+// ===== per-provider casting: each provider shows ITS OWN voices, remembered separately per provider =====
+function _cap(s){ s=String(s||""); return s.charAt(0).toUpperCase()+s.slice(1); }
+function kokoroLabel(v){ const m=String(v).match(/^([ab])([mf])_(.+)$/); return m ? _cap(m[3])+" ("+(m[1]==="a"?"US":"UK")+" "+(m[2]==="m"?"♂":"♀")+")" : v; }
+const EL_NAMES={ "21m00Tcm4TlvDq8ikWAM":"Rachel (♀)","pNInz6obpgDQGcFmaJgB":"Adam (♂)","EXAVITQu4vr4xnSDxMaL":"Sarah (♀)","ErXwobaYiN019PkySvjV":"Antoni (♂)","MF3mGyEYCl7XYWbV9V6O":"Elli (♀)","TxGEqnHWrfWFTfGW9XjX":"Josh (♂)","AZnzlk1XvdvUeBnXmlld":"Domi (♀)","yoZ06aMxZJJ28mfd3POQ":"Sam (♂)" };
+const VOICE_LISTS = {
+  gemini: VOICES.map(v=>({v,label:v})),
+  google: GCLOUD_VOICES.map((v,i)=>({v,label:"Neural2 "+String.fromCharCode(65+i)+" (US)"})),
+  eleven: EL_VOICES.map(v=>({v,label:EL_NAMES[v]||v})),
+  kokoro: KOKORO_VOICES.map(v=>({v,label:kokoroLabel(v)})),
+  streamelements: SE_VOICES.map(v=>({v,label:v})),
+  openai: PUTER_TTS["puter-openai"].voices.map(v=>({v,label:_cap(v)})),
+  polly:  PUTER_TTS["puter-polly"].voices.map(v=>({v,label:v})),
+  xai:    PUTER_TTS["puter-xai"].voices.map(v=>({v,label:_cap(v)}))
+};
+function voiceFamily(p){
+  return (p==="gemini"||p==="puter-gemini") ? "gemini"
+    : p==="google-cloud" ? "google"
+    : (p==="elevenlabs"||p==="puter-eleven") ? "eleven"
+    : p==="kokoro" ? "kokoro"
+    : p==="streamelements" ? "streamelements"
+    : p==="puter-openai" ? "openai"
+    : p==="puter-polly" ? "polly"
+    : p==="puter-xai" ? "xai"
+    : null;   // custom / webspeech: one voice, no per-speaker list
+}
+function _castMap(fam){ return fam==="gemini" ? (project.voiceCast||{}) : ((project.castByFam&&project.castByFam[fam])||{}); }
+function getCastVoice(fam, speaker){ const w=normName(speaker), m=_castMap(fam); for(const k in m){ if(normName(k)===w) return m[k]; } return null; }
+function getCastVoiceSys(fam){ const m=_castMap(fam); for(const k in m){ if(isSysLabel(k)) return m[k]; } return null; }
+function setCastVoice(fam, speaker, val){
+  if(fam==="gemini"){ project.voiceCast=project.voiceCast||{}; project.voiceCast[speaker]=val; return; }
+  project.castByFam=project.castByFam||{}; (project.castByFam[fam]=project.castByFam[fam]||{})[speaker]=val;
+}
+function defaultVoice(fam, speaker, isOnscreen){        // matches the app's original auto-assignment
+  const list=(VOICE_LISTS[fam]||[]).map(o=>o.v); if(!list.length) return null;
+  if(isOnscreen){
+    if(fam==="gemini") return getCastVoiceSys("gemini")||"Iapetus";
+    if(fam==="kokoro") return "am_onyx";
+    if(fam==="google") return "en-US-Neural2-J";
+    if(fam==="streamelements") return "Brian";
+    if(fam==="eleven") return list[1]||list[0];
+    return list[list.length-1];
+  }
+  if(fam==="gemini") return "Charon";
+  return list[Math.max(0,castSpeakerIdx(speaker)) % list.length];
+}
+function resolveVoice(fam, provider, speaker, isOnscreen){
+  const ov = isOnscreen ? getCastVoiceSys(fam) : getCastVoice(fam, speaker);
+  return ov || defaultVoice(fam, speaker, isOnscreen);
 }
 let _kokoro=null, _kokoroLoading=null;
 function kokoroLoadMsg(m){ const st=$("genStatus"); if(st) st.innerHTML='<span class="spin"></span>'+m; setCastMsg(m); }
