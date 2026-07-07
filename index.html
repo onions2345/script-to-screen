@@ -477,6 +477,13 @@
         </select>
       </div>
       <div>
+        <label for="aspectRatio">Aspect ratio</label>
+        <select id="aspectRatio">
+          <option value="16:9" selected>Landscape 16:9 — YouTube (default)</option>
+          <option value="9:16">Vertical 9:16 — YouTube Shorts / phone</option>
+        </select>
+      </div>
+      <div>
         <label for="vidRes">Video resolution</label>
         <select id="vidRes">
           <option value="1280x720" selected>720p (1280×720) — sharper</option>
@@ -615,7 +622,7 @@ REES: You notice more when you write it down.
 ON SCREEN: Note. This contradicts the budget you approved on Tuesday.`;
 
 // ---------- config persistence (local only) ----------
-const cfgKeys = ["key","mText","mTts","mImg","ttsProvider","custUrl","custModel","custVoice","custKey","elevenKey","elevenModel","vidMotion","imgProvider","pollModel","pollKey","puterImgModel","craiyonModel","prodiaKey","prodiaModel","togetherKey","togetherModel","custImgUrl","custImgModel","custImgKey","animProvider","falKey","animSecs","animRes","puterVidModel","puterVidCustom","falVidModel","falVidCustom","pollVidKey","pollVidModel"];
+const cfgKeys = ["key","mText","mTts","mImg","ttsProvider","custUrl","custModel","custVoice","custKey","elevenKey","elevenModel","vidMotion","aspectRatio","imgProvider","pollModel","pollKey","puterImgModel","craiyonModel","prodiaKey","prodiaModel","togetherKey","togetherModel","custImgUrl","custImgModel","custImgKey","animProvider","falKey","animSecs","animRes","puterVidModel","puterVidCustom","falVidModel","falVidCustom","pollVidKey","pollVidModel"];
 cfgKeys.forEach(k=>{
   const el=$(k), v=localStorage.getItem("s2s_"+k);
   if(v===null) return;
@@ -763,7 +770,7 @@ async function genImageGemini(prompt){
   if(!keyEnabled("Images")) throw new Error("Using your key for images is turned off in Settings ⚙ — turn it on there, or pick a free image provider (Pollinations / Puter).");
   const data=await gemini($("mImg").value.trim(),{
     contents:[{parts:[{text:IMG_PREFIX+prompt}]}],
-    generationConfig:{ responseModalities:["IMAGE","TEXT"], imageConfig:{ aspectRatio:"16:9" } }   // match the 16:9 video frame (both resolutions are 16:9); otherwise Gemini returns ~square
+    generationConfig:{ responseModalities:["IMAGE","TEXT"], imageConfig:{ aspectRatio:imgARstr() } }   // match the selected video aspect (16:9 or 9:16); otherwise Gemini returns ~square
   });
   const part=data.candidates?.[0]?.content?.parts?.find(p=>p.inlineData);
   if(!part) throw new Error("no image returned");
@@ -785,9 +792,12 @@ async function cropBlobToAspect(blob, ar, outW){
     return c.toDataURL("image/jpeg",0.92);
   } finally { URL.revokeObjectURL(url); }
 }
+// Selected output aspect (drives image cropping + the render). 16:9 default, 9:16 for Shorts.
+function imgARnum(){ return (($("aspectRatio")&&$("aspectRatio").value)==="9:16") ? 9/16 : 16/9; }
+function imgARstr(){ return (($("aspectRatio")&&$("aspectRatio").value)==="9:16") ? "9:16" : "16:9"; }
 async function genImagePollinations(prompt){
   const model=($("pollModel").value||"flux"), key=($("pollKey").value||"").trim();
-  // Ask for the model's native square (clean pixels), then crop to 16:9 ourselves — Pollinations stretches non-square requests, which looked squashed.
+  // Ask for the model's native square (clean pixels), then crop to the chosen aspect ourselves — Pollinations stretches non-square requests, which looked squashed.
   let url="https://image.pollinations.ai/prompt/"+encodeURIComponent(IMG_PREFIX+prompt)
         +"?width=1024&height=1024&nologo=true&model="+encodeURIComponent(model)+"&seed="+Math.floor(Math.random()*1e6);
   if(key) url+="&key="+encodeURIComponent(key);
@@ -795,7 +805,8 @@ async function genImagePollinations(prompt){
   if(!r.ok) throw new Error("Pollinations "+r.status+": "+(await r.text()).slice(0,200));
   const blob=await r.blob();
   if(!/^image\//.test(blob.type)) throw new Error("Pollinations didn't return an image — it may be busy/rate-limited. Try again, or add a free key in Settings.");
-  return await cropBlobToAspect(blob, 16/9, 1280);
+  const ar=imgARnum();
+  return await cropBlobToAspect(blob, ar, ar>=1?1280:720);
 }
 async function genImagePuter(prompt){
   if(!(window.puter&&puter.ai&&puter.ai.txt2img)) throw new Error("Puter isn't loaded — check your connection and try again.");
@@ -841,7 +852,7 @@ async function genImageTogether(prompt){
     r=await fetch("https://api.together.xyz/v1/images/generations",{
       method:"POST",
       headers:{ "Authorization":"Bearer "+key, "Content-Type":"application/json" },
-      body:JSON.stringify({ model, prompt:(IMG_PREFIX+prompt).trim(), width:1024, height:576, steps:4, n:1, response_format:"b64_json" })
+      body:JSON.stringify({ model, prompt:(IMG_PREFIX+prompt).trim(), width:(imgARnum()>=1?1024:576), height:(imgARnum()>=1?576:1024), steps:4, n:1, response_format:"b64_json" })
     });
   }catch(e){ throw new Error("Couldn't reach Together — likely a CORS/network block from the browser. Tell me and I'll add a proxy. ("+(e.message||e)+")"); }
   if(!r.ok){ let d=""; try{ d=await r.text(); }catch(_){ } throw new Error("Together "+r.status+(d?": "+d.slice(0,200):"")); }
@@ -1588,7 +1599,8 @@ $("videoBtn").onclick = async ()=>{
   const st=$("genStatus"), btn=$("videoBtn");
   btn.disabled=true; st.innerHTML='<span class="spin"></span>Preparing…';
   const res=($("vidRes")&&$("vidRes").value||"1280x720").split("x");
-  const W=parseInt(res[0])||1280, H=parseInt(res[1])||720, FPS=30, HOLD=1.8;
+  let W=parseInt(res[0])||1280, H=parseInt(res[1])||720; const FPS=30, HOLD=1.8;
+  if(($("aspectRatio")&&$("aspectRatio").value)==="9:16"){ const t=W; W=H; H=t; }   // vertical (Shorts): 1280×720 -> 720×1280
   const canvas=$("vcanvas"); canvas.width=W; canvas.height=H; canvas.classList.remove("hidden");
   const cx=canvas.getContext("2d");
   const imgs={};
