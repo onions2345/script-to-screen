@@ -1027,6 +1027,7 @@ function renderCast(){
   const cast=$("castBody"); if(!cast) return; cast.innerHTML="";
   const provider=$("ttsProvider").value, fam=voiceFamily(provider), list=fam?VOICE_LISTS[fam]:null;
   Object.keys(project.voiceCast||{}).forEach(sp=>{
+    if(isSysLabel(sp)) return;                                    // on-screen text is display-only now — not cast, not voiced
     const tr=document.createElement("tr");
     let cell;
     if(list){
@@ -1186,15 +1187,18 @@ function enterEdit(b){
   const mainLabel=isV?"Image prompt":(b.type==="onscreen"?"On-screen text":"Spoken text");
   const subLabel =isV?"Caption (optional)":"Delivery note (optional)";
   const who=isV?"Visual":(b.type==="onscreen"?"On screen":(b.speaker||"Line"));
+  const isOn=b.type==="onscreen";
+  const showSub=!isOn;                                             // on-screen text is display-only, so no delivery note
   el.innerHTML = `<div class="who ${isV?"visual":b.type}">${escapeHtml(who)}</div>`
     + (isLine?`<label class="edlabel">Voice actor / speaker</label><input class="edit spk" type="text" placeholder="e.g. Narrator, Samuel Pepys">`:"")
     + `<label class="edlabel">${mainLabel}</label><textarea class="edit main"></textarea>`
-    + `<label class="edlabel">${subLabel}</label><input class="edit sub" type="text">`
+    + (showSub?`<label class="edlabel">${subLabel}</label><input class="edit sub" type="text">`:"")
+    + (isOn?`<div class="hint" style="margin:2px 0 8px">Shown on screen as a caption — not read aloud.</div>`:"")
     + `<div class="edit-actions"><button class="primary save">Save</button><button class="ghost cancel">Cancel</button></div>`;
   const ta=el.querySelector("textarea.main"); ta.value=mainVal;     // set via JS so raw text isn't HTML-escaped
-  const sub=el.querySelector("input.sub"); sub.value=subVal;
+  const sub=el.querySelector("input.sub"); if(sub) sub.value=subVal;
   const spk=el.querySelector("input.spk"); if(spk) spk.value=b.speaker||"";
-  el.querySelector(".save").onclick=()=>saveEdit(b, ta.value, sub.value, spk?spk.value:null);
+  el.querySelector(".save").onclick=()=>saveEdit(b, ta.value, sub?sub.value:"", spk?spk.value:null);
   el.querySelector(".cancel").onclick=()=>renderOneBeat(b);
   (spk||ta).focus();
 }
@@ -1234,7 +1238,7 @@ $("stopBtn").onclick = ()=>{ cancelGen=true; try{speechSynthesis.cancel();}catch
 $("voicesBtn").onclick = async ()=>{
   if(!project) return;
   const btn=$("voicesBtn"), st=$("genStatus");
-  const spoken = project.beats.filter(b=>b.type==="line"||b.type==="onscreen");
+  const spoken = project.beats.filter(b=>b.type==="line");        // on-screen text is display-only (silent captions), never voiced
   const todo = spoken.filter(b=>!b._pcm);              // only what's missing
   if(!todo.length){ st.textContent="All lines already voiced."; $("downloadBtn").disabled=false; $("downloadMp3Btn").disabled=false; $("videoBtn").disabled=false; return; }
   btn.disabled=true; cancelGen=false; $("stopBtn").classList.remove("hidden"); $("nextTtsBtn").classList.add("hidden");
@@ -1606,8 +1610,11 @@ async function loadClipVideo(url, bag){
 
 $("videoBtn").onclick = async ()=>{
   if(!project) return;
-  if(!project.beats.some(b=>(b.type==="line"||b.type==="onscreen")&&b._pcm)){
-    $("genStatus").textContent="Generate voices first — the video needs audio."; return;
+  const hasAudio =project.beats.some(b=>(b.type==="line"||b.type==="onscreen")&&b._pcm);
+  const hasVisual=project.beats.some(b=>b.type==="visual"&&(b._img||b._video));
+  const hasText  =project.beats.some(b=>b.type==="onscreen"&&(b.text||"").trim());
+  if(!hasAudio && !hasVisual && !hasText){
+    $("genStatus").textContent="Nothing to render yet — add on-screen text, generate voices, or generate images."; return;
   }
   const st=$("genStatus"), btn=$("videoBtn");
   btn.disabled=true; st.innerHTML='<span class="spin"></span>Preparing…';
@@ -1643,6 +1650,10 @@ $("videoBtn").onclick = async ()=>{
       const buf=actx.createBuffer(1, n, rate); const ch=buf.getChannelData(0);
       for(let i=0;i<n;i++) ch[i]=dv.getInt16(i*2,true)/32768;
       segs.push({img:cur,clipUrl:curClip,audio:buf,dur:buf.duration,overlay:(b.type==="onscreen"?(b.text||""):null)});
+    }
+    else if(b.type==="onscreen" && (b.text||"").trim()){          // on-screen text with no audio → show it as a silent caption, held long enough to read
+      const words=b.text.trim().split(/\s+/).length, dur=Math.max(2.4, Math.min(7, 1.2 + words*0.38));
+      segs.push({img:cur,clipUrl:curClip,audio:null,dur,overlay:b.text});
     }
   }
   for(const s of segs) if(s.img) await loadImg(s.img);
