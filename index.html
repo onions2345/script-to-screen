@@ -404,7 +404,7 @@
       <div class="hint">LTX-2 (Lightricks) is cheapest and uses the length/resolution above. <strong>Custom</strong> lets you run <em>any</em> fal video model — paste an id from the <a href="https://fal.ai/models?categories=text-to-video" target="_blank" rel="noopener">fal model gallery</a> (Kling, Veo, Wan, Hailuo, PixVerse, Seedance…); it sends just the prompt and uses that model's defaults, and cost depends on the model. <a href="https://fal.ai/dashboard/keys" target="_blank" rel="noopener">Get a fal.ai key</a> (needs billing). Clips come back as <strong>.mp4 links per shot</strong> — not auto-stitched into the in-app video yet, so download what you want (fal links are temporary).</div>
     </div>
 
-    <h3>Image generation</h3>
+    <h3>Image generation / Video output</h3>
     <div class="row">
       <div>
         <label for="imgProvider">Image provider</label>
@@ -561,7 +561,7 @@
     </div>
     <p class="hint"><strong>Long script?</strong> The free tier caps requests per minute, so some lines/images may fail at first — that's normal. Wait a few seconds and click again; it only fills what's missing. Repeat until done.</p>
     <div id="genStatus" class="status"></div>
-    <canvas id="vcanvas" class="hidden" style="width:100%;border-radius:10px;margin-top:14px;background:#0b0e16;aspect-ratio:16/9"></canvas>
+    <canvas id="vcanvas" class="hidden" style="width:100%;border-radius:10px;margin-top:14px;background:#0b0e16"></canvas>
   </div>
 
   <!-- STEP 3: OUTPUT -->
@@ -690,6 +690,19 @@ function syncImgProviderVis(){
 }
 $("imgProvider").addEventListener("change", syncImgProviderVis);
 syncImgProviderVis();
+
+// Video resolution labels show the dimensions for the currently selected aspect ratio (so vertical reads 720×1280, not 1280×720).
+const VIDRES_NOTE = { "1280x720":"sharper", "960x540":"smaller file" };
+function updateVidResLabels(){
+  const sel=$("vidRes"); if(!sel) return;
+  const vertical=($("aspectRatio")&&$("aspectRatio").value)==="9:16";
+  for(const o of sel.options){
+    const [w,h]=o.value.split("x").map(Number);
+    o.textContent = Math.min(w,h)+"p ("+(vertical?h+"×"+w:w+"×"+h)+") — "+(VIDRES_NOTE[o.value]||"");
+  }
+}
+$("aspectRatio").addEventListener("change", updateVidResLabels);
+updateVidResLabels();
 
 // show the fal.ai key/options only when an animation provider is chosen
 function syncPuterVidCustom(){ $("puterVidCustom").classList.toggle("hidden", $("puterVidModel").value!=="__custom__"); }
@@ -1602,6 +1615,9 @@ $("videoBtn").onclick = async ()=>{
   let W=parseInt(res[0])||1280, H=parseInt(res[1])||720; const FPS=30, HOLD=1.8;
   if(($("aspectRatio")&&$("aspectRatio").value)==="9:16"){ const t=W; W=H; H=t; }   // vertical (Shorts): 1280×720 -> 720×1280
   const canvas=$("vcanvas"); canvas.width=W; canvas.height=H; canvas.classList.remove("hidden");
+  canvas.style.aspectRatio = W+" / "+H; canvas.style.display="block";        // preview matches the real frame shape
+  if(H>W){ canvas.style.width="100%"; canvas.style.maxWidth="min(46%,320px)"; canvas.style.margin="14px auto 0"; }   // vertical: keep it a sensible size, centred
+  else { canvas.style.width="100%"; canvas.style.maxWidth="none"; canvas.style.margin="14px 0 0"; }
   const cx=canvas.getContext("2d");
   const imgs={};
   const loadImg=src=>new Promise(res=>{ if(!src) return res(null); if(imgs[src]) return res(imgs[src]); const im=new Image(); let fin=false; const done=v=>{ if(fin) return; fin=true; res(v); }; im.onload=()=>{ imgs[src]=im; done(im); }; im.onerror=()=>done(null); setTimeout(()=>done(null),8000); im.src=src; });  // never hang on a bad/slow image
