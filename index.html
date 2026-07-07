@@ -549,6 +549,7 @@
       <button id="voicesBtn" class="amber">Generate voices</button>
       <button id="imagesBtn" class="primary">Generate images</button>
       <button id="videoBtn" class="danger" disabled>Render video (WebM)</button>
+      <button id="boostBtn" class="ghost" disabled title="Encode as fast as possible, no live preview → MP4">⚡ Boost render (fast MP4)</button>
       <button id="stopVideoBtn" class="stop hidden">■ Stop render</button>
       <button id="stopBtn" class="stop hidden">■ Stop</button>
       <button id="nextTtsBtn" class="amber hidden">↻ Try next TTS</button>
@@ -605,7 +606,8 @@ const ANALYZER_PROXY = "https://mvandiermen.com/video-tools/analyze.php";
 const CRAIYON_PROXY  = "https://mvandiermen.com/video-tools/craiyon.php";   // server-side Craiyon (avoids CORS; returns a data URL)
 
 // Gemini prebuilt TTS voices (subset; all selectable in the dropdowns)
-const VOICES = ["Charon","Kore","Puck","Aoede","Fenrir","Iapetus","Algenib","Zephyr","Leda","Orus","Schedar","Algieba","Despina","Enceladus","Achernar","Alnilam","Sadachbia","Gacrux"];
+const VOICES = ["Charon","Kore","Puck","Aoede","Fenrir","Iapetus","Algenib","Zephyr","Leda","Orus","Schedar","Algieba","Despina","Enceladus","Achernar","Alnilam","Sadachbia","Gacrux","Callirrhoe","Autonoe","Umbriel","Erinome","Rasalgethi","Laomedeia","Pulcherrima","Achird","Zubenelgenubi","Vindemiatrix","Sadaltager","Sulafat"];
+const GEMINI_VOICE_DESC = { Zephyr:"Bright", Puck:"Upbeat", Charon:"Informative", Kore:"Firm", Fenrir:"Excitable", Leda:"Youthful", Orus:"Firm", Aoede:"Breezy", Callirrhoe:"Easy-going", Autonoe:"Bright", Enceladus:"Breathy", Iapetus:"Clear", Umbriel:"Easy-going", Algieba:"Smooth", Despina:"Smooth", Erinome:"Clear", Algenib:"Gravelly", Rasalgethi:"Informative", Laomedeia:"Upbeat", Achernar:"Soft", Alnilam:"Firm", Schedar:"Even", Gacrux:"Mature", Pulcherrima:"Forward", Achird:"Friendly", Zubenelgenubi:"Casual", Vindemiatrix:"Gentle", Sadachbia:"Lively", Sadaltager:"Knowledgeable", Sulafat:"Warm" };
 
 const SAMPLE = `[PART CARD] PROLOGUE
 
@@ -1240,7 +1242,7 @@ $("voicesBtn").onclick = async ()=>{
   const btn=$("voicesBtn"), st=$("genStatus");
   const spoken = project.beats.filter(b=>b.type==="line");        // on-screen text is display-only (silent captions), never voiced
   const todo = spoken.filter(b=>!b._pcm);              // only what's missing
-  if(!todo.length){ st.textContent="All lines already voiced."; $("downloadBtn").disabled=false; $("downloadMp3Btn").disabled=false; $("videoBtn").disabled=false; return; }
+  if(!todo.length){ st.textContent="All lines already voiced."; $("downloadBtn").disabled=false; $("downloadMp3Btn").disabled=false; $("videoBtn").disabled=false; $("boostBtn").disabled=false; return; }
   btn.disabled=true; cancelGen=false; $("stopBtn").classList.remove("hidden"); $("nextTtsBtn").classList.add("hidden");
   const provider = $("ttsProvider").value, model = $("mTts").value.trim();
   if(provider==="webspeech"){           // must request capture within the click gesture, before other awaits
@@ -1291,6 +1293,7 @@ $("voicesBtn").onclick = async ()=>{
   $("downloadBtn").disabled=false;
   $("downloadMp3Btn").disabled=false;
   $("videoBtn").disabled=false;
+  $("boostBtn").disabled=false;
   btn.disabled=false;
 };
 
@@ -1772,6 +1775,121 @@ $("videoBtn").onclick = async ()=>{
   }
 };
 
+// ===== Boost render: encode as fast as the machine allows via WebCodecs -> MP4 (no live preview). Clips show as their still. =====
+function loadImgEl(src){ return new Promise(res=>{ if(!src) return res(null); const im=new Image(); let fin=false; const d=v=>{ if(!fin){ fin=true; res(v); } }; im.onload=()=>d(im); im.onerror=()=>d(null); setTimeout(()=>d(null),8000); im.src=src; }); }
+function drawBoostSeg(cx, imgs, s, now, W, H, alpha){
+  cx.globalAlpha=alpha;
+  if(s.img && imgs[s.img] && imgs[s.img].width>0 && imgs[s.img].height>0){
+    const im=imgs[s.img], p=Math.max(0,Math.min(1,(now-s.start)/Math.max(0.001,s.dur)));
+    const base=s.kb?Math.max(W/im.width,H/im.height):Math.min(W/im.width,H/im.height);
+    const z=s.kb?(s.kb.z0+(s.kb.z1-s.kb.z0)*p):1;
+    const w=im.width*base*z, h=im.height*base*z; let ox=0,oy=0;
+    if(s.kb){ const mx=Math.max(0,(w-W)/2),my=Math.max(0,(h-H)/2); ox=s.kb.px*mx*(p-0.5)*0.6; oy=s.kb.py*my*(p-0.5)*0.6; }
+    if(isFinite(w)&&isFinite(h)&&w>0&&h>0) cx.drawImage(im,(W-w)/2+ox,(H-h)/2+oy,w,h);
+  }
+  if(s.overlay){
+    const fs=Math.round(H*0.06);
+    cx.font="700 "+fs+"px system-ui,-apple-system,sans-serif"; cx.textAlign="center"; cx.textBaseline="middle";
+    const maxW=W*0.86, words=String(s.overlay).split(/\s+/); const lines=[]; let ln="";
+    for(const w of words){ const t=ln?ln+" "+w:w; if(cx.measureText(t).width>maxW && ln){ lines.push(ln); ln=w; } else ln=t; }
+    if(ln) lines.push(ln);
+    const lh=fs*1.25, totalH=lines.length*lh; let y=H*0.80-totalH/2+lh/2;
+    if(y-lh/2+totalH>H*0.97) y=H*0.97-totalH+lh/2;
+    cx.lineWidth=Math.max(2,fs*0.16); cx.lineJoin="round"; cx.strokeStyle="rgba(0,0,0,0.85)"; cx.fillStyle="#ffffff";
+    lines.forEach(t=>{ cx.strokeText(t,W/2,y); cx.fillText(t,W/2,y); y+=lh; });
+  }
+  cx.globalAlpha=1;
+}
+$("boostBtn").onclick = async ()=>{
+  if(!project) return;
+  const hasAudio =project.beats.some(b=>b.type==="line"&&b._pcm);
+  const hasVisual=project.beats.some(b=>b.type==="visual"&&b._img);
+  const hasText  =project.beats.some(b=>b.type==="onscreen"&&(b.text||"").trim());
+  if(!hasAudio && !hasVisual && !hasText){ $("genStatus").textContent="Nothing to render yet — add on-screen text, generate voices, or generate images."; return; }
+  if(typeof VideoEncoder==="undefined" || typeof AudioEncoder==="undefined" || typeof VideoFrame==="undefined"){
+    $("genStatus").innerHTML="⚡ Boost render needs a Chromium browser (Chrome or Edge). Use <strong>Render video</strong> instead."; return;
+  }
+  const st=$("genStatus"), btn=$("boostBtn");
+  btn.disabled=true; $("videoBtn").disabled=true; st.innerHTML='<span class="spin"></span>⚡ Boost: preparing…';
+  let cancel=false, wake=null;
+  $("stopVideoBtn").classList.remove("hidden");
+  $("stopVideoBtn").onclick=()=>{ cancel=true; st.textContent="Stopping…"; };
+  try{ if(navigator.wakeLock&&navigator.wakeLock.request) wake=await navigator.wakeLock.request("screen"); }catch(_){ }
+  try{
+    let Muxer, ArrayBufferTarget;
+    try{ ({ Muxer, ArrayBufferTarget } = await import("https://esm.run/mp4-muxer")); }
+    catch(e){ throw new Error("Couldn't load the MP4 muxer (network)."); }
+
+    const resArr=($("vidRes")&&$("vidRes").value||"1280x720").split("x"); let W=parseInt(resArr[0])||1280, H=parseInt(resArr[1])||720;
+    if(($("aspectRatio")&&$("aspectRatio").value)==="9:16"){ const t=W; W=H; H=t; }
+    const FPS=30, HOLD=1.8;
+    const motion=($("vidMotion")&&$("vidMotion").value)||"kenburns"; const XF=(motion==="none")?0:0.5; const doKB=(motion==="kenburns");
+    const rate=(pcmRate&&isFinite(pcmRate)&&pcmRate>0)?pcmRate:24000;
+
+    // timeline — same rules as the real-time render; animation clips use their still here
+    let cur=(project.beats.find(b=>b.type==="visual"&&b._img)||{})._img||null, curCap=null;
+    const segs=[];
+    const capRidesLine=(i)=>{ for(let j=i+1;j<project.beats.length;j++){ const nb=project.beats[j]; if(nb.type==="visual") return false; if(nb.type==="onscreen"&&(nb.text||"").trim()) return false; if(nb.type==="line"&&nb._pcm&&nb._pcm.length>=2) return true; } return false; };
+    for(let i=0;i<project.beats.length;i++){ const b=project.beats[i];
+      if(b.type==="visual"){ cur=b._img||cur; curCap=null; segs.push({img:cur,dur:HOLD,overlay:null}); }
+      else if(b.type==="onscreen"&&(b.text||"").trim()){ curCap=b.text; const words=b.text.trim().split(/\s+/).length; const dur=capRidesLine(i)?0.8:Math.max(2.0,Math.min(6,1.0+words*0.34)); segs.push({img:cur,dur,overlay:curCap}); }
+      else if(b._pcm&&b._pcm.length>=2){ segs.push({img:cur,dur:(b._pcm.length>>1)/rate,overlay:curCap,_pcm:b._pcm}); }
+    }
+    if(!segs.length) throw new Error("Nothing to render.");
+    let acc=0; segs.forEach((s,idx)=>{ s.start=acc; s.end=acc+s.dur; s.idx=idx; acc+=s.dur; if(doKB&&s.img) s.kb={z0:1.0,z1:1.08,px:(Math.random()<.5?-1:1),py:(Math.random()<.5?-1:1)}; });
+    const total=acc||1;
+
+    const imgs={}; for(const s of segs){ if(s.img&&!imgs[s.img]) imgs[s.img]=await loadImgEl(s.img); }
+    const anyAudio=segs.some(s=>s._pcm), SR=48000;
+
+    const muxer=new Muxer({ target:new ArrayBufferTarget(), fastStart:"in-memory",
+      video:{ codec:"avc", width:W, height:H },
+      ...(anyAudio?{ audio:{ codec:"aac", numberOfChannels:1, sampleRate:SR } }:{}) });
+    const vEnc=new VideoEncoder({ output:(chunk,meta)=>muxer.addVideoChunk(chunk,meta), error:e=>{ throw e; } });
+    vEnc.configure({ codec:"avc1.42001f", width:W, height:H, bitrate:4000000, framerate:FPS });
+
+    const canvas=document.createElement("canvas"); canvas.width=W; canvas.height=H; const cx=canvas.getContext("2d");
+    const totalFrames=Math.max(1, Math.ceil(total*FPS));
+    for(let f=0; f<totalFrames; f++){
+      if(cancel) throw new Error("stopped");
+      const now=f/FPS;
+      cx.fillStyle="#0b0e16"; cx.fillRect(0,0,W,H);
+      let s=segs[0]; for(const g of segs){ if(now>=g.start&&now<g.end){ s=g; break; } if(now>=g.end) s=g; }
+      drawBoostSeg(cx,imgs,s,now,W,H,1);
+      const next=segs[s.idx+1], left=s.end-now; if(XF>0&&next&&left<XF) drawBoostSeg(cx,imgs,next,next.start,W,H,1-(left/XF));
+      const frame=new VideoFrame(canvas,{ timestamp:Math.round(now*1e6), duration:Math.round(1e6/FPS) });
+      vEnc.encode(frame,{ keyFrame:(f%(FPS*2))===0 }); frame.close();
+      if(vEnc.encodeQueueSize>60){ await new Promise(r=>{ const c=()=>{ if(vEnc.encodeQueueSize<=20||cancel) r(); else setTimeout(c,8); }; c(); }); }
+      if(f%20===0){ st.innerHTML=`<span class="spin"></span>⚡ Boost: encoding ${Math.round(f/totalFrames*100)}%…`; await new Promise(r=>setTimeout(r)); }
+    }
+    await vEnc.flush();
+
+    if(anyAudio){
+      st.innerHTML='<span class="spin"></span>⚡ Boost: encoding audio…'; await new Promise(r=>setTimeout(r));
+      const offc=new OfflineAudioContext(1, Math.max(1,Math.ceil(total*SR)), SR);
+      for(const s of segs){ if(s._pcm){ const n=s._pcm.length>>1; const dv=new DataView(s._pcm.buffer,s._pcm.byteOffset,n*2); const bb=offc.createBuffer(1,n,rate); const chd=bb.getChannelData(0); for(let k=0;k<n;k++) chd[k]=dv.getInt16(k*2,true)/32768; const src=offc.createBufferSource(); src.buffer=bb; src.connect(offc.destination); src.start(s.start); } }
+      const mixed=await offc.startRendering();
+      const aEnc=new AudioEncoder({ output:(chunk,meta)=>muxer.addAudioChunk(chunk,meta), error:e=>{ throw e; } });
+      aEnc.configure({ codec:"mp4a.40.2", sampleRate:SR, numberOfChannels:1, bitrate:128000 });
+      const data=mixed.getChannelData(0), FR=1024;
+      for(let o=0;o<data.length;o+=FR){ if(cancel) throw new Error("stopped"); const len=Math.min(FR,data.length-o); const ad=new AudioData({ format:"f32-planar", sampleRate:SR, numberOfFrames:len, numberOfChannels:1, timestamp:Math.round(o/SR*1e6), data:data.slice(o,o+len) }); aEnc.encode(ad); ad.close(); }
+      await aEnc.flush();
+    }
+
+    muxer.finalize();
+    const blob=new Blob([muxer.target.buffer],{type:"video/mp4"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=(project.title||"film")+".mp4"; a.click();
+    st.textContent="⚡ Boost render done — MP4 downloaded. (Animation clips appear as their still image in Boost mode; use Render video for moving clips.)";
+  }catch(err){
+    if(/stopped/i.test(err.message||"")) st.textContent="Boost render stopped — nothing saved.";
+    else st.innerHTML="Boost render failed: "+escapeHtml(err.message||String(err))+". Try <strong>Render video</strong> (works in any browser), or tell me the error.";
+  }finally{
+    if(wake){ try{ wake.release(); }catch(_){ } }
+    $("stopVideoBtn").classList.add("hidden");
+    $("boostBtn").disabled=false; $("videoBtn").disabled=false;
+  }
+};
+
 // ---------- STEP 3b: visuals ----------
 $("imagesBtn").onclick = async ()=>{
   if(!project) return;
@@ -2037,7 +2155,7 @@ function _cap(s){ s=String(s||""); return s.charAt(0).toUpperCase()+s.slice(1); 
 function kokoroLabel(v){ const m=String(v).match(/^([ab])([mf])_(.+)$/); return m ? _cap(m[3])+" ("+(m[1]==="a"?"US":"UK")+" "+(m[2]==="m"?"♂":"♀")+")" : v; }
 const EL_NAMES={ "21m00Tcm4TlvDq8ikWAM":"Rachel (♀)","pNInz6obpgDQGcFmaJgB":"Adam (♂)","EXAVITQu4vr4xnSDxMaL":"Sarah (♀)","ErXwobaYiN019PkySvjV":"Antoni (♂)","MF3mGyEYCl7XYWbV9V6O":"Elli (♀)","TxGEqnHWrfWFTfGW9XjX":"Josh (♂)","AZnzlk1XvdvUeBnXmlld":"Domi (♀)","yoZ06aMxZJJ28mfd3POQ":"Sam (♂)" };
 const VOICE_LISTS = {
-  gemini: VOICES.map(v=>({v,label:v})),
+  gemini: VOICES.map(v=>({v,label:v+(GEMINI_VOICE_DESC[v]?" — "+GEMINI_VOICE_DESC[v]:"")})),
   google: GCLOUD_VOICES.map((v,i)=>({v,label:"Neural2 "+String.fromCharCode(65+i)+" (US)"})),
   eleven: EL_VOICES.map(v=>({v,label:EL_NAMES[v]||v})),
   kokoro: KOKORO_VOICES.map(v=>({v,label:kokoroLabel(v)})),
