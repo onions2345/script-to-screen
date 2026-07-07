@@ -569,6 +569,26 @@
   <div id="storyCard" class="card hidden">
     <p class="step">STEP 3</p>
     <h2>Storyboard</h2>
+    <div id="musicCard" style="border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:14px;background:var(--panel-2)">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <strong>🎵 Background music</strong>
+        <span id="musicNow" style="color:var(--muted);font-size:13px">none</span>
+        <button id="musicPlayBtn" class="ghost hidden" style="width:auto;font-size:12px;padding:5px 10px">▶ Preview</button>
+        <button id="musicStopBtn" class="ghost hidden" style="width:auto;font-size:12px;padding:5px 10px">■ Stop</button>
+        <button id="musicRemoveBtn" class="ghost hidden" style="width:auto;font-size:12px;padding:5px 10px">✕ Remove</button>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:9px">
+        <button id="suggestMusicBtn" class="amber" style="width:auto;font-size:12px;padding:7px 12px">🎶 Suggest a vibe (Gemini)</button>
+        <label class="ghost" style="width:auto;font-size:12px;padding:7px 12px;border-radius:8px;border:1px solid var(--line);cursor:pointer">⬆ Upload music (MP3)<input id="musicFile" type="file" accept="audio/*" class="hidden"></label>
+      </div>
+      <div id="musicPicks" style="margin-top:9px"></div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:11px;flex-wrap:wrap">
+        <label for="musicVol" style="font-size:12px;color:var(--muted)">Music volume</label>
+        <input id="musicVol" type="range" min="0" max="60" value="20" style="flex:1;min-width:140px">
+        <span id="musicVolLbl" style="font-size:12px;color:var(--muted);min-width:34px">20%</span>
+      </div>
+      <div class="hint" style="margin-top:6px">Your narration always plays at full volume — the music sits <strong>behind it</strong> at the level above, looped to fit and faded out at the end. Use royalty-free music only (Pixabay is CC0, no credit needed).</div>
+    </div>
     <div id="beats"></div>
   </div>
 
@@ -624,7 +644,7 @@ REES: You notice more when you write it down.
 ON SCREEN: Note. This contradicts the budget you approved on Tuesday.`;
 
 // ---------- config persistence (local only) ----------
-const cfgKeys = ["key","mText","mTts","mImg","ttsProvider","custUrl","custModel","custVoice","custKey","elevenKey","elevenModel","vidMotion","aspectRatio","imgProvider","pollModel","pollKey","puterImgModel","craiyonModel","prodiaKey","prodiaModel","togetherKey","togetherModel","custImgUrl","custImgModel","custImgKey","animProvider","falKey","animSecs","animRes","puterVidModel","puterVidCustom","falVidModel","falVidCustom","pollVidKey","pollVidModel"];
+const cfgKeys = ["key","mText","mTts","mImg","ttsProvider","custUrl","custModel","custVoice","custKey","elevenKey","elevenModel","vidMotion","aspectRatio","musicVol","imgProvider","pollModel","pollKey","puterImgModel","craiyonModel","prodiaKey","prodiaModel","togetherKey","togetherModel","custImgUrl","custImgModel","custImgKey","animProvider","falKey","animSecs","animRes","puterVidModel","puterVidCustom","falVidModel","falVidCustom","pollVidKey","pollVidModel"];
 cfgKeys.forEach(k=>{
   const el=$(k), v=localStorage.getItem("s2s_"+k);
   if(v===null) return;
@@ -1024,6 +1044,7 @@ function renderBreakdown(){
   $("exportBtn").disabled=false;
   $("breakdownCard").classList.remove("hidden");
   $("storyCard").classList.remove("hidden");
+  updateMusicUI();
 }
 function renderCast(){
   const cast=$("castBody"); if(!cast) return; cast.innerHTML="";
@@ -1611,6 +1632,58 @@ async function loadClipVideo(url, bag){
   }catch(_){ return null; }
 }
 
+// ===== Background music (mixed under the narration in both renders) =====
+let _musicAudioEl=null;
+function updateMusicUI(){
+  const has=!!(project&&project.music&&project.music.dataUrl);
+  $("musicNow").textContent = has ? ("♪ "+(project.music.name||"track")) : "none";
+  $("musicPlayBtn").classList.toggle("hidden", !has);
+  $("musicRemoveBtn").classList.toggle("hidden", !has);
+  $("musicStopBtn").classList.add("hidden");
+}
+function musicPreviewVol(){ return Math.min(1, (parseInt($("musicVol").value||"20",10)/100)*2.2); }   // preview a bit louder so it's audible on its own
+$("musicFile").addEventListener("change", (e)=>{
+  const f=e.target.files&&e.target.files[0]; if(!f) return;
+  if(!project){ $("genStatus").textContent="Analyze a script first, then add music."; e.target.value=""; return; }
+  const rd=new FileReader();
+  rd.onload=()=>{ project.music={ name:f.name, dataUrl:rd.result }; $("musicPicks").innerHTML=""; updateMusicUI(); $("genStatus").textContent="Background music added: "+f.name; };
+  rd.readAsDataURL(f); e.target.value="";
+});
+$("musicPlayBtn").onclick=()=>{
+  if(!project||!project.music) return;
+  try{ if(_musicAudioEl) _musicAudioEl.pause(); }catch(_){ }
+  _musicAudioEl=new Audio(project.music.dataUrl); _musicAudioEl.volume=musicPreviewVol();
+  _musicAudioEl.onended=()=>{ $("musicStopBtn").classList.add("hidden"); $("musicPlayBtn").classList.remove("hidden"); };
+  _musicAudioEl.play().catch(()=>{});
+  $("musicPlayBtn").classList.add("hidden"); $("musicStopBtn").classList.remove("hidden");
+};
+$("musicStopBtn").onclick=()=>{ try{ if(_musicAudioEl) _musicAudioEl.pause(); }catch(_){ } $("musicStopBtn").classList.add("hidden"); $("musicPlayBtn").classList.remove("hidden"); };
+$("musicRemoveBtn").onclick=()=>{ if(project) project.music=null; try{ if(_musicAudioEl) _musicAudioEl.pause(); }catch(_){ } updateMusicUI(); };
+$("musicVol").addEventListener("input", ()=>{ $("musicVolLbl").textContent=$("musicVol").value+"%"; if(_musicAudioEl) _musicAudioEl.volume=musicPreviewVol(); });
+$("musicVolLbl").textContent=$("musicVol").value+"%";
+$("suggestMusicBtn").onclick=async ()=>{
+  if(!project){ $("genStatus").textContent="Analyze a script first."; return; }
+  const btn=$("suggestMusicBtn"), picks=$("musicPicks"); const old=btn.textContent; btn.disabled=true; btn.textContent="Thinking…";
+  try{
+    const script=(project.beats.filter(b=>b.type==="line").map(b=>b.text).join(" ")||project.title||"").slice(0,2500);
+    const prompt='Suggest background music for a short narrated video. Based on this text, give TWO distinct royalty-free music moods. Reply ONLY as JSON: {"moods":[{"label":"3-5 word mood","query":"2-4 word search term"},{"label":"...","query":"..."}]}. Text: '+script;
+    const data=await analyzeGenerate(($("mText")&&$("mText").value)||"gemini-2.5-flash", { contents:[{ parts:[{ text:prompt }] }] });
+    const txt=(data.candidates?.[0]?.content?.parts?.map(p=>p.text).join("")||"").replace(/```json|```/g,"").trim();
+    let moods=[]; try{ moods=(JSON.parse(txt).moods)||[]; }catch(_){ }
+    if(!moods.length){ picks.innerHTML='<div class="hint">Couldn\'t read a suggestion — try again, or just upload a track.</div>'; return; }
+    picks.innerHTML = moods.slice(0,2).map(m=>{ const q=encodeURIComponent(m.query||m.label||"ambient");
+      return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:5px 0"><span style="font-size:13px">🎧 <strong>'+escapeHtml(m.label||"")+'</strong></span><a class="ghost" style="width:auto;font-size:12px;padding:4px 10px;border-radius:8px;border:1px solid var(--line);text-decoration:none" href="https://pixabay.com/music/search/'+q+'/" target="_blank" rel="noopener">Browse free tracks ↗</a></div>';
+    }).join("") + '<div class="hint" style="margin-top:4px">Pick a track on Pixabay (CC0, free, no credit), download the MP3, then use <strong>Upload music</strong> above.</div>';
+  }catch(e){ picks.innerHTML='<div class="hint">Suggestion failed: '+escapeHtml(e.message||String(e))+'. You can still upload a track.</div>'; }
+  finally{ btn.disabled=false; btn.textContent=old; }
+};
+async function decodeMusic(ac){                                   // decode the chosen track for mixing into a render
+  if(!project||!project.music||!project.music.dataUrl) return null;
+  try{ const ab=await (await fetch(project.music.dataUrl)).arrayBuffer(); return await ac.decodeAudioData(ab); }
+  catch(_){ return null; }
+}
+function musicVol01(){ return Math.max(0, Math.min(0.6, (parseInt($("musicVol").value||"20",10)/100))); }
+
 $("videoBtn").onclick = async ()=>{
   if(!project) return;
   const hasAudio =project.beats.some(b=>(b.type==="line"||b.type==="onscreen")&&b._pcm);
@@ -1635,6 +1708,9 @@ $("videoBtn").onclick = async ()=>{
   const actx=new (window.AudioContext||window.webkitAudioContext)();
   const gain=actx.createGain(); gain.connect(actx.destination);              // hear it while it records
   const dest=actx.createMediaStreamDestination(); gain.connect(dest);        // and feed it into the video
+  const musicBuf = await decodeMusic(actx);                                   // background music (optional)
+  let musicGain=null;
+  if(musicBuf){ musicGain=actx.createGain(); musicGain.gain.value=musicVol01(); musicGain.connect(actx.destination); musicGain.connect(dest); }
 
   let rec=null, running=true, stopRender=false;   // declared out here so the catch/finally below can reach them
   const objUrls=[];                     // blob URLs for clips, revoked in finally
@@ -1751,6 +1827,8 @@ $("videoBtn").onclick = async ()=>{
   const t0=actx.currentTime+0.2;
   (function loop(){ drawAt(Math.max(0, actx.currentTime - t0)); if(running) requestAnimationFrame(loop); })();
   segs.forEach(s=>{ if(s.audio){ const src=actx.createBufferSource(); src.buffer=s.audio; src.connect(gain); src.start(t0+s.start); } });
+  if(musicBuf && musicGain){ const m=actx.createBufferSource(); m.buffer=musicBuf; m.loop=true; m.connect(musicGain); m.start(t0);   // loop music to fill, fade out at the end
+    const endT=t0+(isFinite(total)?total:1); musicGain.gain.setValueAtTime(musicVol01(), Math.max(t0, endT-1.4)); musicGain.gain.linearRampToValueAtTime(0.0001, endT); }
   const recMs = Math.min(20*60*1000, Math.max(1500, (isFinite(total)?total:1)*1000+500));   // always finite, so recording always stops
   const secsTotal=Math.ceil(recMs/1000);
   const isMobile=/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent||"");
@@ -1840,7 +1918,7 @@ $("boostBtn").onclick = async ()=>{
     const total=acc||1;
 
     const imgs={}; for(const s of segs){ if(s.img&&!imgs[s.img]) imgs[s.img]=await loadImgEl(s.img); }
-    const anyAudio=segs.some(s=>s._pcm), SR=48000;
+    const anyAudio=segs.some(s=>s._pcm) || !!(project.music&&project.music.dataUrl), SR=48000;
 
     const muxer=new Muxer({ target:new ArrayBufferTarget(), fastStart:"in-memory",
       video:{ codec:"avc", width:W, height:H },
@@ -1868,6 +1946,9 @@ $("boostBtn").onclick = async ()=>{
       st.innerHTML='<span class="spin"></span>⚡ Boost: encoding audio…'; await new Promise(r=>setTimeout(r));
       const offc=new OfflineAudioContext(1, Math.max(1,Math.ceil(total*SR)), SR);
       for(const s of segs){ if(s._pcm){ const n=s._pcm.length>>1; const dv=new DataView(s._pcm.buffer,s._pcm.byteOffset,n*2); const bb=offc.createBuffer(1,n,rate); const chd=bb.getChannelData(0); for(let k=0;k<n;k++) chd[k]=dv.getInt16(k*2,true)/32768; const src=offc.createBufferSource(); src.buffer=bb; src.connect(offc.destination); src.start(s.start); } }
+      const mb=await decodeMusic(offc);                            // background music, ducked under narration
+      if(mb){ const mg=offc.createGain(); mg.gain.value=musicVol01(); mg.connect(offc.destination); const m=offc.createBufferSource(); m.buffer=mb; m.loop=true; m.connect(mg); m.start(0);
+        mg.gain.setValueAtTime(musicVol01(), Math.max(0,total-1.4)); mg.gain.linearRampToValueAtTime(0.0001, total); }
       const mixed=await offc.startRendering();
       const aEnc=new AudioEncoder({ output:(chunk,meta)=>muxer.addAudioChunk(chunk,meta), error:e=>{ throw e; } });
       aEnc.configure({ codec:"mp4a.40.2", sampleRate:SR, numberOfChannels:1, bitrate:128000 });
