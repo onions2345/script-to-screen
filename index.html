@@ -1639,21 +1639,30 @@ $("videoBtn").onclick = async ()=>{
   try{ if(navigator.wakeLock && navigator.wakeLock.request) wake=await navigator.wakeLock.request("screen"); }catch(_){ }
   try{
   const rate = (pcmRate && isFinite(pcmRate) && pcmRate>0) ? pcmRate : 24000;   // guard a missing/bad sample rate
-  // Timeline: a held frame for each visual beat, the audio for each spoken beat. (No title card.)
-  let cur=(project.beats.find(b=>b.type==="visual" && b._img)||{})._img || null, curClip=null;
+  // Timeline: a held frame per visual beat; audio per voiced line. On-screen text becomes a "current caption" that
+  // rides over the following voice lines (like the current image does) and clears at the next image or next on-screen.
+  let cur=(project.beats.find(b=>b.type==="visual" && b._img)||{})._img || null, curClip=null, curCap=null;
   const segs=[];
-  for(const b of project.beats){
-    if(b.type==="visual"){ cur = b._img || cur; curClip = shotUsesClip(b) ? b._video : null; segs.push({img:cur,clipUrl:curClip,audio:null,dur:HOLD}); }
+  const capRidesLine=(i)=>{ for(let j=i+1;j<project.beats.length;j++){ const nb=project.beats[j];
+      if(nb.type==="visual") return false;                                  // next image ends the caption
+      if(nb.type==="onscreen" && (nb.text||"").trim()) return false;        // next on-screen replaces it
+      if(nb.type==="line" && nb._pcm && nb._pcm.length>=2) return true; }    // next voiced line -> caption rides over it
+    return false; };
+  for(let i=0;i<project.beats.length;i++){
+    const b=project.beats[i];
+    if(b.type==="visual"){ cur = b._img || cur; curClip = shotUsesClip(b) ? b._video : null; curCap=null; segs.push({img:cur,clipUrl:curClip,audio:null,dur:HOLD,overlay:null}); }
+    else if(b.type==="onscreen" && (b.text||"").trim()){
+      curCap=b.text;                                                        // caption starts; it now persists over the following lines
+      const words=b.text.trim().split(/\s+/).length;
+      const dur = capRidesLine(i) ? 0.8 : Math.max(2.0, Math.min(6, 1.0 + words*0.34));   // brief lead-in if a line follows; else hold long enough to read
+      segs.push({img:cur,clipUrl:curClip,audio:null,dur,overlay:curCap});
+    }
     else if(b._pcm && b._pcm.length>=2){
       const n=b._pcm.length>>1;                                  // # of Int16 samples
       const dv=new DataView(b._pcm.buffer, b._pcm.byteOffset, n*2);   // DataView -> no byte-alignment requirement
       const buf=actx.createBuffer(1, n, rate); const ch=buf.getChannelData(0);
-      for(let i=0;i<n;i++) ch[i]=dv.getInt16(i*2,true)/32768;
-      segs.push({img:cur,clipUrl:curClip,audio:buf,dur:buf.duration,overlay:(b.type==="onscreen"?(b.text||""):null)});
-    }
-    else if(b.type==="onscreen" && (b.text||"").trim()){          // on-screen text with no audio → show it as a silent caption, held long enough to read
-      const words=b.text.trim().split(/\s+/).length, dur=Math.max(2.4, Math.min(7, 1.2 + words*0.38));
-      segs.push({img:cur,clipUrl:curClip,audio:null,dur,overlay:b.text});
+      for(let k=0;k<n;k++) ch[k]=dv.getInt16(k*2,true)/32768;
+      segs.push({img:cur,clipUrl:curClip,audio:buf,dur:buf.duration,overlay:curCap});     // current caption (if any) stays over this line
     }
   }
   for(const s of segs) if(s.img) await loadImg(s.img);
