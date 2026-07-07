@@ -7,8 +7,8 @@ Paste a screenplay or story. It works out who speaks each line, gives every char
 **▶ Live:** https://onions2345.github.io/script-to-screen/
 
 `Free` · `No account` · `Runs in your browser` · `One HTML file` · `Open source`
-
-You can download it and ask claude to edit it to make it better for yourself. 
+ 
+You can download it and ask claude to edit it to make it better for yourself, welcome to submit an update here. 
 
 ---
 
