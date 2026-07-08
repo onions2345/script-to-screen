@@ -1114,6 +1114,9 @@ function beatViewHTML(b){
   if(b.type==="visual"){
     return ctl + `<div class="who visual">Visual</div><p>${escapeHtml(b.prompt||"")}</p>${b.caption?`<div class="cap">${escapeHtml(b.caption)}</div>`:""}<div class="slot"></div>`;
   }
+  if(b.type==="gap"){
+    return ctl + `<div class="who" style="color:var(--muted)">⏸ Gap · ${b.secs||3}s</div><p style="color:var(--muted);font-size:13px">Silent pause holding the current image (no audio).</p>`;
+  }
   const who = b.type==="onscreen" ? "On screen" : (b.speaker||"Line");
   return ctl + `<div class="who ${b.type}">${escapeHtml(who)}</div><p>${escapeHtml(b.text||"")}</p>${b.style?`<div class="style">${escapeHtml(b.style)}</div>`:""}<div class="slot"></div>`;
 }
@@ -1165,6 +1168,7 @@ function reRenderBeats(){ project.beats.forEach((b,i)=> b._id="b"+i); renderBeat
 function newBeat(type){
   if(type==="visual")   return { type:"visual", prompt:"", caption:"", style:(project.style||"") };
   if(type==="onscreen") return { type:"onscreen", text:"", style:"" };
+  if(type==="gap")      return { type:"gap", secs:3 };            // silent hold on the current image
   const sp = Object.keys(project.voiceCast||{})[0] || "Narrator";     // reuse an existing voice actor by default
   return { type:"line", speaker:sp, text:"", style:"" };
 }
@@ -1174,6 +1178,7 @@ function buildAddMenu(onPick){
     + `<button class="ghost am" data-t="visual">🎬 Visual</button>`
     + `<button class="ghost am" data-t="line">💬 Voice line</button>`
     + `<button class="ghost am" data-t="onscreen">📝 On screen</button>`
+    + `<button class="ghost am" data-t="gap">⏸ Gap</button>`
     + `<button class="ghost am xx" title="Cancel">✕</button>`;
   menu.querySelector(".xx").onclick=()=>menu.remove();
   menu.querySelectorAll(".am[data-t]").forEach(btn=> btn.onclick=()=>{ const t=btn.dataset.t; menu.remove(); onPick(t); });
@@ -1205,6 +1210,13 @@ function deleteBeat(b){
 // ---------- inline editing of a beat's text ----------
 function enterEdit(b){
   const el=$(b._id); if(!el) return;
+  if(b.type==="gap"){
+    el.innerHTML = `<div class="who">⏸ Gap</div><label class="edlabel">Gap length (seconds)</label><input class="edit gapsecs" type="number" min="0.5" max="30" step="0.5" value="${b.secs||3}"><div class="edit-actions"><button class="primary save">Save</button><button class="ghost cancel">Cancel</button></div>`;
+    const gs=el.querySelector("input.gapsecs");
+    el.querySelector(".save").onclick=()=>{ b.secs=Math.max(0.5,Math.min(30,parseFloat(gs.value)||3)); renderOneBeat(b); };
+    el.querySelector(".cancel").onclick=()=>renderOneBeat(b);
+    gs.focus(); return;
+  }
   const isV=b.type==="visual", isLine=b.type==="line";
   const mainVal=isV?(b.prompt||""):(b.text||"");
   const subVal =isV?(b.caption||""):(b.style||"");
@@ -1735,6 +1747,7 @@ $("videoBtn").onclick = async ()=>{
   for(let i=0;i<project.beats.length;i++){
     const b=project.beats[i];
     if(b.type==="visual"){ cur = b._img || cur; curClip = shotUsesClip(b) ? b._video : null; curCap=null; segs.push({img:cur,clipUrl:curClip,audio:null,dur:HOLD,overlay:null}); }
+    else if(b.type==="gap"){ segs.push({img:cur,clipUrl:curClip,audio:null,dur:Math.max(0.3, b.secs||3),overlay:curCap}); }   // silent hold
     else if(b.type==="onscreen" && (b.text||"").trim()){
       curCap=b.text;                                                        // caption starts; it now persists over the following lines
       const words=b.text.trim().split(/\s+/).length;
@@ -1915,6 +1928,7 @@ $("boostBtn").onclick = async ()=>{
     const capRidesLine=(i)=>{ for(let j=i+1;j<project.beats.length;j++){ const nb=project.beats[j]; if(nb.type==="visual") return false; if(nb.type==="onscreen"&&(nb.text||"").trim()) return false; if(nb.type==="line"&&nb._pcm&&nb._pcm.length>=2) return true; } return false; };
     for(let i=0;i<project.beats.length;i++){ const b=project.beats[i];
       if(b.type==="visual"){ cur=b._img||cur; curCap=null; segs.push({img:cur,dur:HOLD,overlay:null}); }
+      else if(b.type==="gap"){ segs.push({img:cur,dur:Math.max(0.3,b.secs||3),overlay:curCap}); }   // silent hold
       else if(b.type==="onscreen"&&(b.text||"").trim()){ curCap=b.text; const words=b.text.trim().split(/\s+/).length; const dur=capRidesLine(i)?0.8:Math.max(2.0,Math.min(6,1.0+words*0.34)); segs.push({img:cur,dur,overlay:curCap}); }
       else if(b._pcm&&b._pcm.length>=2){ segs.push({img:cur,dur:(b._pcm.length>>1)/rate,overlay:curCap,_pcm:b._pcm}); }
     }
