@@ -559,6 +559,7 @@
       <button id="downloadBtn" class="ghost" disabled>Download WAV (lossless)</button>
       <button id="downloadMp3Btn" class="ghost" disabled>Download MP3 (small)</button>
       <button id="exportBtn" class="ghost" disabled>Download storyboard</button>
+      <button id="quickListenBtn" class="ghost" disabled>▶ Quick listen</button>
     </div>
     <p class="hint"><strong>Long script?</strong> The free tier caps requests per minute, so some lines/images may fail at first — that's normal. Wait a few seconds and click again; it only fills what's missing. Repeat until done.</p>
     <div id="genStatus" class="status"></div>
@@ -1044,6 +1045,7 @@ function renderBreakdown(){
   renderCast();
   renderBeats();
   $("exportBtn").disabled=false;
+  $("quickListenBtn").disabled=false;
   $("breakdownCard").classList.remove("hidden");
   $("storyCard").classList.remove("hidden");
   updateMusicUI();
@@ -1701,6 +1703,95 @@ async function decodeMusic(ac){                                   // decode the 
   catch(_){ return null; }
 }
 function musicVol01(){ return Math.max(0, Math.min(0.6, (parseInt($("musicVol").value||"20",10)/100))); }
+
+$("quickListenBtn").onclick = ()=>{
+  if(!project) return;
+  const esc = s => (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  let body="";
+  project.beats.forEach(b=>{
+    if(b.type==="line"){
+      body += '<div class="seg line" data-sp="'+esc(b.speaker||"Narrator")+'" data-text="'+esc(b.text||"")+'"><div class="who">'+esc(b.speaker||"NARRATOR")+'</div><p>'+esc(b.text||"")+'</p></div>';
+    } else if(b.type==="onscreen"){
+      body += '<div class="seg os"><div class="who">ON SCREEN</div><p>'+esc(b.text||"")+'</p></div>';
+    } else if(b.type==="visual"){
+      body += '<div class="seg vis"><div class="who">VISUAL</div><p>'+esc(b.prompt||b.caption||"")+'</p></div>';
+    } else if(b.type==="gap"){
+      body += '<div class="seg gap"><div class="who">⏸ GAP · '+(b.secs||3)+'s</div></div>';
+    }
+  });
+  const title=esc(project.title||"Quick listen");
+  const doc = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} — quick listen</title>
+<style>
+ body{margin:0;background:#0b0e16;color:#e7e9f2;font-family:system-ui,-apple-system,sans-serif;line-height:1.55}
+ .wrap{max-width:820px;margin:0 auto;padding:20px 18px 80px}
+ h1{font-size:26px;margin:0 0 12px;letter-spacing:-.02em}
+ .bar{position:sticky;top:0;background:#0b0e16;padding:10px 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap;z-index:5;border-bottom:1px solid #2a3146}
+ .bar button{font-size:14px;font-weight:600;padding:9px 16px;border:none;border-radius:9px;background:#5fb98a;color:#06210f;cursor:pointer}
+ .bar #rs{background:transparent;color:#e7e9f2;border:1px solid #2a3146}
+ .note{color:#9aa3bf;font-size:12px}
+ .vpanel{margin:12px 0}
+ .vpanel summary{cursor:pointer;color:#9aa3bf;font-size:13px}
+ .vrow{display:flex;align-items:center;gap:8px;margin:6px 0;flex-wrap:wrap}
+ .vlab{font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.1em;color:#e9a13b;min-width:110px}
+ .vrow select{background:#161b2c;color:#e7e9f2;border:1px solid #2a3146;border-radius:8px;padding:5px 8px;font-size:12px;max-width:100%}
+ .seg{border:1px solid #2a3146;border-radius:12px;padding:14px 16px;margin:12px 0;background:#161b2c;transition:background .15s,border-color .15s}
+ .seg.vis,.seg.os,.seg.gap{background:#10131c;opacity:.62}
+ .seg .who{font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.12em;color:#e9a13b;margin-bottom:6px}
+ .seg.os .who,.seg.vis .who,.seg.gap .who{color:#9aa3bf}
+ .seg p{margin:0}
+ .seg.reading{background:#243b2c;border-color:#5fb98a;opacity:1;box-shadow:0 0 0 1px #5fb98a}
+</style></head>
+<body><div class="wrap">
+<h1>${title}</h1>
+<div class="bar"><button id="pp">▶ Play</button><button id="rs">↺ Restart</button><span class="note">Reads the dialogue aloud with your device's own voices. If it stays silent, click ▶ Play once.</span></div>
+<details class="vpanel"><summary>🎙 Voices per character (tap to change)</summary><div id="voices"></div></details>
+${body}
+</div>
+<script>var voices=[],cur=0,playing=false,started=false,assigned={};
+function byName(n){for(var i=0;i<voices.length;i++){if(voices[i].name===n)return voices[i];}return null;}
+function engPool(){var e=voices.filter(function(v){return /^en/i.test(v.lang);});return e.length?e:voices;}
+function uniqueSpeakers(){var els=document.querySelectorAll(".seg.line"),out=[];for(var i=0;i<els.length;i++){var s=els[i].getAttribute("data-sp")||"Narrator";if(out.indexOf(s)<0)out.push(s);}return out;}
+function buildVoiceUI(){
+  var sp=uniqueSpeakers(),pool=engPool();
+  sp.forEach(function(s,i){ if(!assigned[s]) assigned[s]=((pool[i%pool.length])||voices[0]||{}).name; });
+  var wrap=document.getElementById("voices"); wrap.innerHTML="";
+  sp.forEach(function(s){
+    var row=document.createElement("div"); row.className="vrow";
+    var lab=document.createElement("span"); lab.className="vlab"; lab.textContent=s; row.appendChild(lab);
+    var sel=document.createElement("select");
+    voices.forEach(function(v){ var o=document.createElement("option"); o.value=v.name; o.textContent=v.name+" ("+v.lang+")"; if(v.name===assigned[s])o.selected=true; sel.appendChild(o); });
+    sel.onchange=function(){ assigned[s]=sel.value; };
+    row.appendChild(sel); wrap.appendChild(row);
+  });
+}
+var ITEMS=[];
+function buildItems(){ ITEMS=[]; var els=document.querySelectorAll(".seg.line"); for(var i=0;i<els.length;i++){ ITEMS.push({el:els[i],sp:els[i].getAttribute("data-sp")||"Narrator",text:els[i].getAttribute("data-text")||""}); } }
+function clearHi(){ var h=document.querySelectorAll(".reading"); for(var i=0;i<h.length;i++)h[i].classList.remove("reading"); }
+function setBtn(){ document.getElementById("pp").textContent=playing?"⏸ Pause":"▶ Play"; }
+function speakCur(){
+  if(!playing) return;
+  if(cur>=ITEMS.length){ playing=false; clearHi(); cur=0; setBtn(); return; }
+  var it=ITEMS[cur]; clearHi(); it.el.classList.add("reading"); it.el.scrollIntoView({behavior:"smooth",block:"center"});
+  var u=new SpeechSynthesisUtterance(it.text); var v=byName(assigned[it.sp]); if(v)u.voice=v; u.rate=1;
+  u.onend=function(){ if(playing){ cur++; speakCur(); } };
+  u.onerror=function(){ if(playing){ cur++; speakCur(); } };
+  try{ speechSynthesis.speak(u); }catch(e){}
+}
+function play(){ if(playing)return; started=true; playing=true; if(cur>=ITEMS.length)cur=0; try{speechSynthesis.cancel();}catch(e){} speakCur(); setBtn(); }
+function pause(){ playing=false; try{speechSynthesis.cancel();}catch(e){} setBtn(); }
+function restart(){ pause(); cur=0; setTimeout(play,140); }
+function ensureVoices(cb){ voices=speechSynthesis.getVoices(); if(voices.length){cb();return;} var done=false; speechSynthesis.onvoiceschanged=function(){ if(done)return; voices=speechSynthesis.getVoices(); if(voices.length){done=true;cb();} }; setTimeout(function(){ if(done)return; voices=speechSynthesis.getVoices(); done=true; cb(); },700); }
+(function(){
+  if(!("speechSynthesis" in window)){ document.querySelector(".note").textContent="Your browser has no speech engine — try Chrome or Edge."; return; }
+  buildItems();
+  ensureVoices(function(){ buildVoiceUI(); document.getElementById("pp").onclick=function(){ playing?pause():play(); }; document.getElementById("rs").onclick=restart; setTimeout(function(){ if(!started)play(); },500); });
+})();
+document.addEventListener("click",function(){ if(!started)play(); },{once:true});
+<\/script>
+</body></html>`;
+  const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([doc],{type:"text/html"})); a.download=(project.title||"quick-listen")+"-listen.html"; a.click();
+  $("genStatus").textContent="Quick-listen file downloaded — open it and it reads the dialogue aloud (click ▶ Play if it's silent).";
+};
 
 $("videoBtn").onclick = async ()=>{
   if(!project) return;
